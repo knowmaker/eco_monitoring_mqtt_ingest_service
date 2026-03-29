@@ -1,7 +1,7 @@
 import logging
 from typing import Any, Dict, Optional
 
-import psycopg2
+import psycopg
 
 SUPPORTED_DEVICE_TYPES = ("gas", "dust", "meteo", "ivtm")
 
@@ -58,7 +58,7 @@ class MqttIngestDbWriter:
 
     def _ensure_connection(self) -> None:
         if self.db_connection is None or self.db_connection.closed:
-            self.db_connection = psycopg2.connect(self.db_dsn)
+            self.db_connection = psycopg.connect(self.db_dsn)
             self.db_connection.autocommit = False
 
     def close(self) -> None:
