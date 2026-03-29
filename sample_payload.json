@@ -1,0 +1,107 @@
+{
+  "modbusStatus": "OK",
+  "modbusStatusTime": 1771241377181,
+  "rs485Status": "OK",
+  "rs485StatusTime": 1771241377181,
+  "gas": {
+    "deviceName": "Hawosense",
+    "boardTemperature": 0,
+    "timeStamp": 1771241377181,
+    "calibration": {
+      "setTimeCalibration": 900000,
+      "calibration": 0,
+      "calibrationTimeStart": 1771232671000,
+      "warning": 0,
+      "status": "CALIBRATION_STATUS_SUCCESFULL_COMPLETED",
+      "calibrationTimeEnd": 1771232671000
+    },
+    "numberReboot": {
+      "countReboot": 0,
+      "time": 0
+    },
+    "ping": "OK",
+    "pingTime": 1771241377181,
+    "sensors": [
+      {
+        "signal": 0,
+        "status": "ready",
+        "value": -0.0045000179670751095,
+        "scaleDimension": "ppm parts per million",
+        "substanceCode": "NO2",
+        "id": 1
+      },
+      {
+        "signal": 0,
+        "status": "ready",
+        "value": 0.013819710351526737,
+        "scaleDimension": "ppm parts per million",
+        "substanceCode": "O3",
+        "id": 2
+      },
+      {
+        "signal": 0,
+        "status": "ready",
+        "value": 0.008305603638291359,
+        "scaleDimension": "ppm parts per million",
+        "substanceCode": "NO",
+        "id": 3
+      },
+      {
+        "signal": 0,
+        "status": "ready",
+        "value": 0.01149710826575756,
+        "scaleDimension": "ppm parts per million",
+        "substanceCode": "SO2",
+        "id": 4
+      },
+      {
+        "signal": 0,
+        "status": "ready",
+        "value": 0.3512762188911438,
+        "scaleDimension": "ppm parts per million",
+        "substanceCode": "CO",
+        "id": 5
+      }
+    ]
+  },
+  "dust": {
+    "deviceName": "MetidaPM",
+    "timeStampDevice": "1771241378",
+    "humidity": 18.5,
+    "temp": 18.4,
+    "pm1Concentration": 0.0,
+    "pm2Concentration": 0.0004600000102072954,
+    "pm10Concentration": 0.00203999993391335,
+    "tspConcentration": 0.00203999993391335,
+    "status": true,
+    "timeStamp": 1771241377181,
+    "ping": "OK",
+    "pingTime": 1771241377181,
+    "numberReboot": {
+      "countReboot": 0,
+      "time": 0
+    }
+  },
+  "meteo": {
+    "ping": "BAD",
+    "pingTime": 1771241377181
+  },
+  "ivtm": {
+    "sensorIVTMhum": 27.687183380126953,
+    "sensorIVTMtemp": 5.883455753326416,
+    "deviceName": "IVTM",
+    "ping": "OK",
+    "pingTime": 1771241377181,
+    "sensorIVTMerror": [],
+    "timestamp": 1771241377181
+  },
+  "deviceName": "PLC",
+  "latitude": null,
+  "longitude": null,
+  "timeStamp": 1771241377181,
+  "serial": "10000000576b91d800",
+  "memTotal": 1935290368,
+  "memFree": 1356316672,
+  "memUsed": 578973696,
+  "cpuTemp": 33.589
+}
