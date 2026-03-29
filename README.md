@@ -17,6 +17,7 @@
 
 ```powershell
 cd eco_monitoring_mqtt_ingest_service
+python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 ```
