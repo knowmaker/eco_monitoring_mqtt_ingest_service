@@ -65,24 +65,108 @@ class MqttIngestDbWriter:
         if self.db_connection is not None and not self.db_connection.closed:
             self.db_connection.close()
 
+    def _resolve_monitoring_post_id(
+        self,
+        cur,
+        serial: str,
+        latitude: Optional[float],
+        longitude: Optional[float],
+    ) -> int:
+        cur.execute(
+            """
+            SELECT
+                EXISTS(SELECT 1 FROM monitoring_posts WHERE serial = %s AND is_stationary),
+                EXISTS(SELECT 1 FROM monitoring_posts WHERE serial = %s AND NOT is_stationary)
+            """,
+            (serial, serial),
+        )
+        stationary_exists, mobile_exists = cur.fetchone()
+
+        if stationary_exists:
+            cur.execute(
+                """
+                INSERT INTO monitoring_posts (serial, latitude, longitude, is_stationary)
+                VALUES (%s, %s, %s, TRUE)
+                ON CONFLICT (serial) WHERE is_stationary
+                DO UPDATE SET
+                    latitude = COALESCE(EXCLUDED.latitude, monitoring_posts.latitude),
+                    longitude = COALESCE(EXCLUDED.longitude, monitoring_posts.longitude)
+                RETURNING id
+                """,
+                (serial, latitude, longitude),
+            )
+            return cur.fetchone()[0]
+
+        if mobile_exists:
+            if latitude is None or longitude is None:
+                # Coordinates were not provided; use the latest mobile post row for this serial.
+                cur.execute(
+                    """
+                    SELECT id
+                    FROM monitoring_posts
+                    WHERE serial = %s
+                      AND NOT is_stationary
+                    ORDER BY id DESC
+                    LIMIT 1
+                    """,
+                    (serial,),
+                )
+                row = cur.fetchone()
+                if row is not None:
+                    return row[0]
+
+            cur.execute(
+                """
+                INSERT INTO monitoring_posts (serial, latitude, longitude, is_stationary)
+                VALUES (%s, %s, %s, FALSE)
+                ON CONFLICT (serial, latitude, longitude) WHERE NOT is_stationary
+                DO UPDATE SET serial = EXCLUDED.serial
+                RETURNING id
+                """,
+                (serial, latitude, longitude),
+            )
+            return cur.fetchone()[0]
+
+        # New serial: create stationary post by default.
+        cur.execute(
+            """
+            INSERT INTO monitoring_posts (serial, latitude, longitude, is_stationary)
+            VALUES (%s, %s, %s, TRUE)
+            ON CONFLICT (serial) WHERE is_stationary
+            DO UPDATE SET
+                latitude = COALESCE(EXCLUDED.latitude, monitoring_posts.latitude),
+                longitude = COALESCE(EXCLUDED.longitude, monitoring_posts.longitude)
+            RETURNING id
+            """,
+            (serial, latitude, longitude),
+        )
+        return cur.fetchone()[0]
+
     def write_payload(self, payload: Dict[str, Any], aggregation_period_min: int) -> None:
         self._ensure_connection()
         serial = str(payload.get("serial") or "UNKNOWN_SERIAL")
+        latitude = to_float(payload.get("latitude"))
+        longitude = to_float(payload.get("longitude"))
         plc_timestamp_ms = normalize_epoch_ms(payload.get("timeStamp"))
         if plc_timestamp_ms is None:
             raise ValueError("Payload has no valid top-level timeStamp.")
 
         try:
             with self.db_connection.cursor() as cur:
+                monitoring_post_id = self._resolve_monitoring_post_id(
+                    cur=cur,
+                    serial=serial,
+                    latitude=latitude,
+                    longitude=longitude,
+                )
+
                 cur.execute(
                     """
                     INSERT INTO plc_state (
-                        serial,
+                        monitoring_post_id,
                         aggregation_period_min,
                         plc_timestamp_ms,
                         device_name,
-                        latitude,
-                        longitude,
                         modbus_status,
                         modbus_status_time_ms,
                         rs485_status,
@@ -92,12 +176,10 @@ class MqttIngestDbWriter:
                         mem_used,
                         cpu_temp
                     )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    ON CONFLICT (serial, aggregation_period_min, plc_timestamp_ms)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (monitoring_post_id, aggregation_period_min, plc_timestamp_ms)
                     DO UPDATE SET
                         device_name = EXCLUDED.device_name,
-                        latitude = EXCLUDED.latitude,
-                        longitude = EXCLUDED.longitude,
                         modbus_status = EXCLUDED.modbus_status,
                         modbus_status_time_ms = EXCLUDED.modbus_status_time_ms,
                         rs485_status = EXCLUDED.rs485_status,
@@ -110,12 +192,10 @@ class MqttIngestDbWriter:
                     RETURNING id
                     """,
                     (
-                        serial,
+                        monitoring_post_id,
                         aggregation_period_min,
                         plc_timestamp_ms,
                         payload.get("deviceName"),
-                        to_float(payload.get("latitude")),
-                        to_float(payload.get("longitude")),
                         payload.get("modbusStatus"),
                         normalize_epoch_ms(payload.get("modbusStatusTime")),
                         payload.get("rs485Status"),

@@ -10,16 +10,36 @@ DROP TABLE IF EXISTS meteo_state CASCADE;
 DROP TABLE IF EXISTS ivtm_state CASCADE;
 DROP TABLE IF EXISTS device_state CASCADE;
 DROP TABLE IF EXISTS plc_state CASCADE;
+DROP TABLE IF EXISTS monitoring_posts CASCADE;
+
+-- Monitoring posts metadata (one row per stationary post, many rows per mobile post by coordinates).
+CREATE TABLE IF NOT EXISTS monitoring_posts (
+    id BIGSERIAL PRIMARY KEY,
+    serial TEXT NOT NULL,
+    latitude DOUBLE PRECISION CHECK (latitude IS NULL OR latitude BETWEEN -90 AND 90),
+    longitude DOUBLE PRECISION CHECK (longitude IS NULL OR longitude BETWEEN -180 AND 180),
+    is_stationary BOOLEAN NOT NULL DEFAULT TRUE
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_monitoring_posts_stationary_serial
+    ON monitoring_posts (serial)
+    WHERE is_stationary;
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_monitoring_posts_mobile_serial_coords
+    ON monitoring_posts (serial, latitude, longitude)
+    WHERE NOT is_stationary;
+
+CREATE INDEX IF NOT EXISTS idx_monitoring_posts_serial
+    ON monitoring_posts (serial);
 
 -- PLC-level packet state (regular table).
 CREATE TABLE IF NOT EXISTS plc_state (
     id BIGSERIAL PRIMARY KEY,
-    serial TEXT NOT NULL,
+    monitoring_post_id BIGINT NOT NULL
+        REFERENCES monitoring_posts (id),
     aggregation_period_min SMALLINT NOT NULL CHECK (aggregation_period_min IN (5, 20)),
     plc_timestamp_ms BIGINT NOT NULL CHECK (plc_timestamp_ms > 0),
     device_name TEXT,
-    latitude DOUBLE PRECISION CHECK (latitude IS NULL OR latitude BETWEEN -90 AND 90),
-    longitude DOUBLE PRECISION CHECK (longitude IS NULL OR longitude BETWEEN -180 AND 180),
     modbus_status TEXT CHECK (modbus_status IS NULL OR modbus_status IN ('OK', 'BAD')),
     modbus_status_time_ms BIGINT CHECK (modbus_status_time_ms IS NULL OR modbus_status_time_ms > 0),
     rs485_status TEXT CHECK (rs485_status IS NULL OR rs485_status IN ('OK', 'BAD')),
@@ -29,11 +49,11 @@ CREATE TABLE IF NOT EXISTS plc_state (
     mem_used BIGINT CHECK (mem_used IS NULL OR mem_used >= 0),
     cpu_temp DOUBLE PRECISION,
     received_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE (serial, aggregation_period_min, plc_timestamp_ms)
+    UNIQUE (monitoring_post_id, aggregation_period_min, plc_timestamp_ms)
 );
 
-CREATE INDEX IF NOT EXISTS idx_plc_state_serial_ts
-    ON plc_state (serial, plc_timestamp_ms DESC);
+CREATE INDEX IF NOT EXISTS idx_plc_state_post_ts
+    ON plc_state (monitoring_post_id, plc_timestamp_ms DESC);
 
 CREATE INDEX IF NOT EXISTS idx_plc_state_period_ts
     ON plc_state (aggregation_period_min, plc_timestamp_ms DESC);
