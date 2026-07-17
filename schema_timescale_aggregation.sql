@@ -35,8 +35,6 @@ WITH (timescaledb.continuous) AS
 SELECT
   time_bucket(3600000::BIGINT, d.device_timestamp_ms) AS bucket_ms,
   p.monitoring_post_id,
-  AVG(d.humidity)           AS humidity_avg,
-  AVG(d.temp)               AS temp_avg,
   AVG(d.pm1_concentration)  AS pm1_avg,
   AVG(d.pm2_concentration)  AS pm2_avg,
   AVG(d.pm10_concentration) AS pm10_avg,
@@ -106,8 +104,6 @@ WITH (timescaledb.continuous) AS
 SELECT
   time_bucket(86400000::BIGINT, d.device_timestamp_ms, 75600000::BIGINT) AS bucket_ms,
   p.monitoring_post_id,
-  AVG(d.humidity)           AS humidity_avg,
-  AVG(d.temp)               AS temp_avg,
   AVG(d.pm1_concentration)  AS pm1_avg,
   AVG(d.pm2_concentration)  AS pm2_avg,
   AVG(d.pm10_concentration) AS pm10_avg,
