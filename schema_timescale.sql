@@ -1,4 +1,4 @@
-BEGIN;
+﻿BEGIN;
 
 CREATE EXTENSION IF NOT EXISTS timescaledb;
 
@@ -11,6 +11,35 @@ DROP TABLE IF EXISTS ivtm_state CASCADE;
 DROP TABLE IF EXISTS device_state CASCADE;
 DROP TABLE IF EXISTS plc_state CASCADE;
 DROP TABLE IF EXISTS monitoring_posts CASCADE;
+DROP TABLE IF EXISTS pollutant_limits CASCADE;
+
+-- Pollutant limit reference values for ambient air, mg/m3.
+CREATE TABLE IF NOT EXISTS pollutant_limits (
+    pollutant_code TEXT PRIMARY KEY,
+    pdk_max_once DOUBLE PRECISION CHECK (pdk_max_once IS NULL OR pdk_max_once >= 0),
+    pdk_daily DOUBLE PRECISION CHECK (pdk_daily IS NULL OR pdk_daily >= 0),
+    pdk_annual DOUBLE PRECISION CHECK (pdk_annual IS NULL OR pdk_annual >= 0)
+);
+
+INSERT INTO pollutant_limits (
+    pollutant_code,
+    pdk_max_once,
+    pdk_daily,
+    pdk_annual
+) VALUES
+    ('CO', 5.0, 3.0, 3.0),
+    ('NO', 0.4, NULL, 0.06),
+    ('NO2', 0.2, 0.1, 0.04),
+    ('O3', 0.16, 0.1, 0.03),
+    ('SO2', 0.5, 0.05, NULL),
+    ('PM1', NULL, NULL, NULL),
+    ('PM2.5', 0.16, 0.035, 0.025),
+    ('PM10', 0.3, 0.06, 0.04),
+    ('TSP', 0.5, 0.15, 0.075)
+ON CONFLICT (pollutant_code) DO UPDATE SET
+    pdk_max_once = EXCLUDED.pdk_max_once,
+    pdk_daily = EXCLUDED.pdk_daily,
+    pdk_annual = EXCLUDED.pdk_annual;
 
 -- Monitoring posts metadata (one row per stationary post, many rows per mobile post by coordinates).
 CREATE TABLE IF NOT EXISTS monitoring_posts (
