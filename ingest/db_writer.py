@@ -74,65 +74,9 @@ class MqttIngestDbWriter:
     ) -> int:
         cur.execute(
             """
-            SELECT
-                EXISTS(SELECT 1 FROM monitoring_posts WHERE serial = %s AND is_stationary),
-                EXISTS(SELECT 1 FROM monitoring_posts WHERE serial = %s AND NOT is_stationary)
-            """,
-            (serial, serial),
-        )
-        stationary_exists, mobile_exists = cur.fetchone()
-
-        if stationary_exists:
-            cur.execute(
-                """
-                INSERT INTO monitoring_posts (serial, latitude, longitude, is_stationary)
-                VALUES (%s, %s, %s, TRUE)
-                ON CONFLICT (serial) WHERE is_stationary
-                DO UPDATE SET
-                    latitude = COALESCE(EXCLUDED.latitude, monitoring_posts.latitude),
-                    longitude = COALESCE(EXCLUDED.longitude, monitoring_posts.longitude)
-                RETURNING id
-                """,
-                (serial, latitude, longitude),
-            )
-            return cur.fetchone()[0]
-
-        if mobile_exists:
-            if latitude is None or longitude is None:
-                # Coordinates were not provided; use the latest mobile post row for this serial.
-                cur.execute(
-                    """
-                    SELECT id
-                    FROM monitoring_posts
-                    WHERE serial = %s
-                      AND NOT is_stationary
-                    ORDER BY id DESC
-                    LIMIT 1
-                    """,
-                    (serial,),
-                )
-                row = cur.fetchone()
-                if row is not None:
-                    return row[0]
-
-            cur.execute(
-                """
-                INSERT INTO monitoring_posts (serial, latitude, longitude, is_stationary)
-                VALUES (%s, %s, %s, FALSE)
-                ON CONFLICT (serial, latitude, longitude) WHERE NOT is_stationary
-                DO UPDATE SET serial = EXCLUDED.serial
-                RETURNING id
-                """,
-                (serial, latitude, longitude),
-            )
-            return cur.fetchone()[0]
-
-        # New serial: create stationary post by default.
-        cur.execute(
-            """
-            INSERT INTO monitoring_posts (serial, latitude, longitude, is_stationary)
-            VALUES (%s, %s, %s, TRUE)
-            ON CONFLICT (serial) WHERE is_stationary
+            INSERT INTO monitoring_posts (serial, latitude, longitude, is_confirmed)
+            VALUES (%s, %s, %s, FALSE)
+            ON CONFLICT (serial)
             DO UPDATE SET
                 latitude = COALESCE(EXCLUDED.latitude, monitoring_posts.latitude),
                 longitude = COALESCE(EXCLUDED.longitude, monitoring_posts.longitude)
