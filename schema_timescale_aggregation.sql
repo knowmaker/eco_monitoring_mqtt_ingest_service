@@ -223,84 +223,41 @@ SELECT add_continuous_aggregate_policy(
   schedule_interval => INTERVAL '5 minutes'
 );
 
--- Daily aggregates for month mode: every hour, recalculate last 120 days excluding current day.
+-- Daily aggregates for month mode: every hour, recalculate last 30 days excluding current day.
+-- Older aggregate buckets are preserved and are not refreshed after raw data retention removes source rows.
 SELECT add_continuous_aggregate_policy(
   'public.cagg_dust_daily',
-  start_offset => 10368000000::BIGINT,
+  start_offset => 2592000000::BIGINT,
   end_offset => 86400000::BIGINT,
   schedule_interval => INTERVAL '1 hour'
 );
 
 SELECT add_continuous_aggregate_policy(
   'public.cagg_meteo_daily',
-  start_offset => 10368000000::BIGINT,
+  start_offset => 2592000000::BIGINT,
   end_offset => 86400000::BIGINT,
   schedule_interval => INTERVAL '1 hour'
 );
 
 SELECT add_continuous_aggregate_policy(
   'public.cagg_ivtm_daily',
-  start_offset => 10368000000::BIGINT,
+  start_offset => 2592000000::BIGINT,
   end_offset => 86400000::BIGINT,
   schedule_interval => INTERVAL '1 hour'
 );
 
 SELECT add_continuous_aggregate_policy(
   'public.cagg_gas_daily',
-  start_offset => 10368000000::BIGINT,
+  start_offset => 2592000000::BIGINT,
   end_offset => 86400000::BIGINT,
   schedule_interval => INTERVAL '1 hour'
 );
 
--- 5) Reset + add raw retention (14 days).
-DO $$
-BEGIN
-  BEGIN
-    PERFORM remove_retention_policy('public.gas_sensors');
-  EXCEPTION WHEN OTHERS THEN
-    NULL;
-  END;
-  PERFORM add_retention_policy('public.gas_sensors', drop_after => 1209600000::BIGINT);
-END
-$$;
-
-DO $$
-BEGIN
-  BEGIN
-    PERFORM remove_retention_policy('public.dust_state');
-  EXCEPTION WHEN OTHERS THEN
-    NULL;
-  END;
-  PERFORM add_retention_policy('public.dust_state', drop_after => 1209600000::BIGINT);
-END
-$$;
-
-DO $$
-BEGIN
-  BEGIN
-    PERFORM remove_retention_policy('public.meteo_state');
-  EXCEPTION WHEN OTHERS THEN
-    NULL;
-  END;
-  PERFORM add_retention_policy('public.meteo_state', drop_after => 1209600000::BIGINT);
-END
-$$;
-
-DO $$
-BEGIN
-  BEGIN
-    PERFORM remove_retention_policy('public.ivtm_state');
-  EXCEPTION WHEN OTHERS THEN
-    NULL;
-  END;
-  PERFORM add_retention_policy('public.ivtm_state', drop_after => 1209600000::BIGINT);
-END
-$$;
-
--- 6) Cleanup helper for non-hypertables (plc_state/device_state cascade chain).
+-- 5) Raw cleanup for plc_state/device_state cascade chain.
+-- Aggregates do not get retention policies and are preserved indefinitely.
 CREATE INDEX IF NOT EXISTS idx_plc_state_ts_only ON public.plc_state (plc_timestamp_ms);
 
-CREATE OR REPLACE FUNCTION public.cleanup_plc_state_older_than_14d()
+CREATE OR REPLACE FUNCTION public.cleanup_raw_state_older_than_30d()
 RETURNS BIGINT
 LANGUAGE plpgsql
 AS $$
@@ -308,12 +265,44 @@ DECLARE
   deleted_count BIGINT;
 BEGIN
   DELETE FROM public.plc_state
-  WHERE plc_timestamp_ms < public.now_ms() - 1209600000::BIGINT;
+  WHERE plc_timestamp_ms < public.now_ms() - 2592000000::BIGINT;
 
   GET DIAGNOSTICS deleted_count = ROW_COUNT;
   RETURN deleted_count;
 END
 $$;
 
--- Optional: run once manually after setup
--- SELECT public.cleanup_plc_state_older_than_14d();
+CREATE OR REPLACE PROCEDURE public.cleanup_raw_state_older_than_30d_job(job_id INT, config JSONB)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  PERFORM public.cleanup_raw_state_older_than_30d();
+END
+$$;
+
+DO $$
+DECLARE
+  old_job_id INTEGER;
+BEGIN
+  FOR old_job_id IN
+    SELECT job_id
+    FROM timescaledb_information.jobs
+    WHERE proc_schema = 'public'
+      AND proc_name IN (
+        'cleanup_raw_state_older_than_14d_job',
+        'cleanup_raw_state_older_than_30d_job'
+      )
+  LOOP
+    PERFORM delete_job(old_job_id);
+  END LOOP;
+END
+$$;
+
+SELECT add_job(
+  'public.cleanup_raw_state_older_than_30d_job',
+  INTERVAL '1 hour',
+  config => '{}'::jsonb
+);
+
+-- Optional: run once manually after setup.
+-- SELECT public.cleanup_raw_state_older_than_30d();
