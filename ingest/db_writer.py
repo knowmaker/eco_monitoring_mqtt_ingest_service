@@ -2,6 +2,7 @@ import logging
 from typing import Any, Dict, Optional
 
 import psycopg
+from psycopg.types.json import Jsonb
 
 SUPPORTED_DEVICE_TYPES = ("gas", "dust", "meteo", "ivtm")
 
@@ -151,6 +152,16 @@ class MqttIngestDbWriter:
                     ),
                 )
                 plc_id = cur.fetchone()[0]
+
+                cur.execute(
+                    """
+                    INSERT INTO raw_mqtt_payload (plc_state_id, payload)
+                    VALUES (%s, %s)
+                    ON CONFLICT (plc_state_id)
+                    DO UPDATE SET payload = EXCLUDED.payload
+                    """,
+                    (plc_id, Jsonb(payload)),
+                )
 
                 for device_type in SUPPORTED_DEVICE_TYPES:
                     device_payload = payload.get(device_type)

@@ -9,6 +9,7 @@ DROP TABLE IF EXISTS dust_state CASCADE;
 DROP TABLE IF EXISTS meteo_state CASCADE;
 DROP TABLE IF EXISTS ivtm_state CASCADE;
 DROP TABLE IF EXISTS device_state CASCADE;
+DROP TABLE IF EXISTS raw_mqtt_payload CASCADE;
 DROP TABLE IF EXISTS plc_state CASCADE;
 DROP TABLE IF EXISTS monitoring_posts CASCADE;
 DROP TABLE IF EXISTS pollutant_limits CASCADE;
@@ -49,6 +50,7 @@ CREATE TABLE IF NOT EXISTS monitoring_posts (
     post_type TEXT CHECK (post_type IS NULL OR post_type IN ('stationary', 'mobile', 'drone')),
     latitude DOUBLE PRECISION CHECK (latitude IS NULL OR latitude BETWEEN -90 AND 90),
     longitude DOUBLE PRECISION CHECK (longitude IS NULL OR longitude BETWEEN -180 AND 180),
+    notes TEXT,
     is_confirmed BOOLEAN NOT NULL DEFAULT FALSE
 );
 
@@ -83,6 +85,14 @@ CREATE INDEX IF NOT EXISTS idx_plc_state_post_ts
 
 CREATE INDEX IF NOT EXISTS idx_plc_state_period_ts
     ON plc_state (aggregation_period_min, plc_timestamp_ms DESC);
+
+-- Original MQTT packet payload, one raw JSON document per PLC packet.
+CREATE TABLE IF NOT EXISTS raw_mqtt_payload (
+    plc_state_id BIGINT PRIMARY KEY
+        REFERENCES plc_state (id)
+        ON DELETE CASCADE,
+    payload JSONB NOT NULL
+);
 
 -- Common per-device status for one packet (regular table).
 CREATE TABLE IF NOT EXISTS device_state (

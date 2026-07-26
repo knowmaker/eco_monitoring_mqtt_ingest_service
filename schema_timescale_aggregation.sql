@@ -12,10 +12,10 @@ AS $$
   SELECT (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT;
 $$;
 
-SELECT set_integer_now_func('public.gas_sensors', 'public.now_ms');
-SELECT set_integer_now_func('public.dust_state',  'public.now_ms');
-SELECT set_integer_now_func('public.meteo_state', 'public.now_ms');
-SELECT set_integer_now_func('public.ivtm_state',  'public.now_ms');
+SELECT set_integer_now_func('public.gas_sensors', 'public.now_ms', true);
+SELECT set_integer_now_func('public.dust_state',  'public.now_ms', true);
+SELECT set_integer_now_func('public.meteo_state', 'public.now_ms', true);
+SELECT set_integer_now_func('public.ivtm_state',  'public.now_ms', true);
 
 -- 2) Recreate hourly and daily continuous aggregates.
 -- Daily aggregates are used by the UI month mode: one point per day inside the selected month.
@@ -35,10 +35,10 @@ WITH (timescaledb.continuous) AS
 SELECT
   time_bucket(3600000::BIGINT, d.device_timestamp_ms) AS bucket_ms,
   p.monitoring_post_id,
-  AVG(d.pm1_concentration)  AS pm1_avg,
-  AVG(d.pm2_concentration)  AS pm2_avg,
-  AVG(d.pm10_concentration) AS pm10_avg,
-  AVG(d.tsp_concentration)  AS tsp_avg
+  percentile_cont(0.5) WITHIN GROUP (ORDER BY d.pm1_concentration)  AS pm1_avg,
+  percentile_cont(0.5) WITHIN GROUP (ORDER BY d.pm2_concentration)  AS pm2_avg,
+  percentile_cont(0.5) WITHIN GROUP (ORDER BY d.pm10_concentration) AS pm10_avg,
+  percentile_cont(0.5) WITHIN GROUP (ORDER BY d.tsp_concentration)  AS tsp_avg
 FROM public.dust_state d
 JOIN public.device_state ds ON ds.id = d.device_state_id
 JOIN public.plc_state p     ON p.id = ds.plc_state_id
@@ -51,9 +51,9 @@ WITH (timescaledb.continuous) AS
 SELECT
   time_bucket(3600000::BIGINT, m.device_timestamp_ms) AS bucket_ms,
   p.monitoring_post_id,
-  AVG(m.atm_press) AS atm_press_avg,
-  AVG(m.air_temp)  AS air_temp_avg,
-  AVG(m.air_hum)   AS air_hum_avg,
+  percentile_cont(0.5) WITHIN GROUP (ORDER BY m.atm_press)    AS atm_press_avg,
+  percentile_cont(0.5) WITHIN GROUP (ORDER BY m.air_temp)     AS air_temp_avg,
+  percentile_cont(0.5) WITHIN GROUP (ORDER BY m.air_hum)      AS air_hum_avg,
   CASE
     WHEN sqrt(
       power(AVG(sin(radians(m.hor_win_dir))), 2) +
@@ -76,8 +76,8 @@ WITH (timescaledb.continuous) AS
 SELECT
   time_bucket(3600000::BIGINT, i.device_timestamp_ms) AS bucket_ms,
   p.monitoring_post_id,
-  AVG(i.sensor_ivtm_hum)  AS sensor_ivtm_hum_avg,
-  AVG(i.sensor_ivtm_temp) AS sensor_ivtm_temp_avg
+  percentile_cont(0.5) WITHIN GROUP (ORDER BY i.sensor_ivtm_hum)  AS sensor_ivtm_hum_avg,
+  percentile_cont(0.5) WITHIN GROUP (ORDER BY i.sensor_ivtm_temp) AS sensor_ivtm_temp_avg
 FROM public.ivtm_state i
 JOIN public.device_state ds ON ds.id = i.device_state_id
 JOIN public.plc_state p     ON p.id = ds.plc_state_id
@@ -91,7 +91,7 @@ SELECT
   time_bucket(3600000::BIGINT, g.device_timestamp_ms) AS bucket_ms,
   p.monitoring_post_id,
   COALESCE(g.substance_code, 'UNKNOWN') AS substance_code,
-  AVG(g.value) AS value_avg
+  percentile_cont(0.5) WITHIN GROUP (ORDER BY g.value) AS value_avg
 FROM public.gas_sensors g
 JOIN public.device_state ds ON ds.id = g.device_state_id
 JOIN public.plc_state p     ON p.id = ds.plc_state_id
@@ -104,10 +104,10 @@ WITH (timescaledb.continuous) AS
 SELECT
   time_bucket(86400000::BIGINT, d.device_timestamp_ms, 75600000::BIGINT) AS bucket_ms,
   p.monitoring_post_id,
-  AVG(d.pm1_concentration)  AS pm1_avg,
-  AVG(d.pm2_concentration)  AS pm2_avg,
-  AVG(d.pm10_concentration) AS pm10_avg,
-  AVG(d.tsp_concentration)  AS tsp_avg
+  percentile_cont(0.5) WITHIN GROUP (ORDER BY d.pm1_concentration)  AS pm1_avg,
+  percentile_cont(0.5) WITHIN GROUP (ORDER BY d.pm2_concentration)  AS pm2_avg,
+  percentile_cont(0.5) WITHIN GROUP (ORDER BY d.pm10_concentration) AS pm10_avg,
+  percentile_cont(0.5) WITHIN GROUP (ORDER BY d.tsp_concentration)  AS tsp_avg
 FROM public.dust_state d
 JOIN public.device_state ds ON ds.id = d.device_state_id
 JOIN public.plc_state p     ON p.id = ds.plc_state_id
@@ -120,9 +120,9 @@ WITH (timescaledb.continuous) AS
 SELECT
   time_bucket(86400000::BIGINT, m.device_timestamp_ms, 75600000::BIGINT) AS bucket_ms,
   p.monitoring_post_id,
-  AVG(m.atm_press) AS atm_press_avg,
-  AVG(m.air_temp)  AS air_temp_avg,
-  AVG(m.air_hum)   AS air_hum_avg,
+  percentile_cont(0.5) WITHIN GROUP (ORDER BY m.atm_press)    AS atm_press_avg,
+  percentile_cont(0.5) WITHIN GROUP (ORDER BY m.air_temp)     AS air_temp_avg,
+  percentile_cont(0.5) WITHIN GROUP (ORDER BY m.air_hum)      AS air_hum_avg,
   CASE
     WHEN sqrt(
       power(AVG(sin(radians(m.hor_win_dir))), 2) +
@@ -145,8 +145,8 @@ WITH (timescaledb.continuous) AS
 SELECT
   time_bucket(86400000::BIGINT, i.device_timestamp_ms, 75600000::BIGINT) AS bucket_ms,
   p.monitoring_post_id,
-  AVG(i.sensor_ivtm_hum)  AS sensor_ivtm_hum_avg,
-  AVG(i.sensor_ivtm_temp) AS sensor_ivtm_temp_avg
+  percentile_cont(0.5) WITHIN GROUP (ORDER BY i.sensor_ivtm_hum)  AS sensor_ivtm_hum_avg,
+  percentile_cont(0.5) WITHIN GROUP (ORDER BY i.sensor_ivtm_temp) AS sensor_ivtm_temp_avg
 FROM public.ivtm_state i
 JOIN public.device_state ds ON ds.id = i.device_state_id
 JOIN public.plc_state p     ON p.id = ds.plc_state_id
@@ -160,7 +160,7 @@ SELECT
   time_bucket(86400000::BIGINT, g.device_timestamp_ms, 75600000::BIGINT) AS bucket_ms,
   p.monitoring_post_id,
   COALESCE(g.substance_code, 'UNKNOWN') AS substance_code,
-  AVG(g.value) AS value_avg
+  percentile_cont(0.5) WITHIN GROUP (ORDER BY g.value) AS value_avg
 FROM public.gas_sensors g
 JOIN public.device_state ds ON ds.id = g.device_state_id
 JOIN public.plc_state p     ON p.id = ds.plc_state_id
@@ -223,32 +223,32 @@ SELECT add_continuous_aggregate_policy(
   schedule_interval => INTERVAL '5 minutes'
 );
 
--- Daily aggregates for month mode: every hour, recalculate last 30 days excluding current day.
+-- Daily aggregates for month mode: every hour, recalculate last 14 days excluding current day.
 -- Older aggregate buckets are preserved and are not refreshed after raw data retention removes source rows.
 SELECT add_continuous_aggregate_policy(
   'public.cagg_dust_daily',
-  start_offset => 2592000000::BIGINT,
+  start_offset => 1209600000::BIGINT,
   end_offset => 86400000::BIGINT,
   schedule_interval => INTERVAL '1 hour'
 );
 
 SELECT add_continuous_aggregate_policy(
   'public.cagg_meteo_daily',
-  start_offset => 2592000000::BIGINT,
+  start_offset => 1209600000::BIGINT,
   end_offset => 86400000::BIGINT,
   schedule_interval => INTERVAL '1 hour'
 );
 
 SELECT add_continuous_aggregate_policy(
   'public.cagg_ivtm_daily',
-  start_offset => 2592000000::BIGINT,
+  start_offset => 1209600000::BIGINT,
   end_offset => 86400000::BIGINT,
   schedule_interval => INTERVAL '1 hour'
 );
 
 SELECT add_continuous_aggregate_policy(
   'public.cagg_gas_daily',
-  start_offset => 2592000000::BIGINT,
+  start_offset => 1209600000::BIGINT,
   end_offset => 86400000::BIGINT,
   schedule_interval => INTERVAL '1 hour'
 );
@@ -257,7 +257,7 @@ SELECT add_continuous_aggregate_policy(
 -- Aggregates do not get retention policies and are preserved indefinitely.
 CREATE INDEX IF NOT EXISTS idx_plc_state_ts_only ON public.plc_state (plc_timestamp_ms);
 
-CREATE OR REPLACE FUNCTION public.cleanup_raw_state_older_than_30d()
+CREATE OR REPLACE FUNCTION public.cleanup_raw_state_older_than_14d()
 RETURNS BIGINT
 LANGUAGE plpgsql
 AS $$
@@ -265,18 +265,18 @@ DECLARE
   deleted_count BIGINT;
 BEGIN
   DELETE FROM public.plc_state
-  WHERE plc_timestamp_ms < public.now_ms() - 2592000000::BIGINT;
+  WHERE plc_timestamp_ms < public.now_ms() - 1209600000::BIGINT;
 
   GET DIAGNOSTICS deleted_count = ROW_COUNT;
   RETURN deleted_count;
 END
 $$;
 
-CREATE OR REPLACE PROCEDURE public.cleanup_raw_state_older_than_30d_job(job_id INT, config JSONB)
+CREATE OR REPLACE PROCEDURE public.cleanup_raw_state_older_than_14d_job(job_id INT, config JSONB)
 LANGUAGE plpgsql
 AS $$
 BEGIN
-  PERFORM public.cleanup_raw_state_older_than_30d();
+  PERFORM public.cleanup_raw_state_older_than_14d();
 END
 $$;
 
@@ -299,10 +299,10 @@ END
 $$;
 
 SELECT add_job(
-  'public.cleanup_raw_state_older_than_30d_job',
+  'public.cleanup_raw_state_older_than_14d_job',
   INTERVAL '1 hour',
   config => '{}'::jsonb
 );
 
 -- Optional: run once manually after setup.
--- SELECT public.cleanup_raw_state_older_than_30d();
+-- SELECT public.cleanup_raw_state_older_than_14d();
