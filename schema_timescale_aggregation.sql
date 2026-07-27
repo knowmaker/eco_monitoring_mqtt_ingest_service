@@ -194,62 +194,62 @@ CREATE INDEX IF NOT EXISTS idx_cagg_gas_daily_post_substance_bucket
   ON public.cagg_gas_daily (monitoring_post_id, substance_code, bucket_ms DESC);
 
 -- 4) Auto refresh policies.
--- Hourly aggregates: every 5 minutes, recalculate last 1 day excluding latest 1 hour.
+-- Hourly aggregates: every 5 minutes, recalculate last 6 hours excluding latest 10 minutes.
 SELECT add_continuous_aggregate_policy(
   'public.cagg_dust_hourly',
-  start_offset => 86400000::BIGINT,
-  end_offset => 3600000::BIGINT,
+  start_offset => 21600000::BIGINT,
+  end_offset => 600000::BIGINT,
   schedule_interval => INTERVAL '5 minutes'
 );
 
 SELECT add_continuous_aggregate_policy(
   'public.cagg_meteo_hourly',
-  start_offset => 86400000::BIGINT,
-  end_offset => 3600000::BIGINT,
+  start_offset => 21600000::BIGINT,
+  end_offset => 600000::BIGINT,
   schedule_interval => INTERVAL '5 minutes'
 );
 
 SELECT add_continuous_aggregate_policy(
   'public.cagg_ivtm_hourly',
-  start_offset => 86400000::BIGINT,
-  end_offset => 3600000::BIGINT,
+  start_offset => 21600000::BIGINT,
+  end_offset => 600000::BIGINT,
   schedule_interval => INTERVAL '5 minutes'
 );
 
 SELECT add_continuous_aggregate_policy(
   'public.cagg_gas_hourly',
-  start_offset => 86400000::BIGINT,
-  end_offset => 3600000::BIGINT,
+  start_offset => 21600000::BIGINT,
+  end_offset => 600000::BIGINT,
   schedule_interval => INTERVAL '5 minutes'
 );
 
--- Daily aggregates for month mode: every hour, recalculate last 14 days excluding current day.
+-- Daily aggregates for month mode: every hour, recalculate last 3 days excluding latest 10 minutes.
 -- Older aggregate buckets are preserved and are not refreshed after raw data retention removes source rows.
 SELECT add_continuous_aggregate_policy(
   'public.cagg_dust_daily',
-  start_offset => 1209600000::BIGINT,
-  end_offset => 86400000::BIGINT,
+  start_offset => 259200000::BIGINT,
+  end_offset => 600000::BIGINT,
   schedule_interval => INTERVAL '1 hour'
 );
 
 SELECT add_continuous_aggregate_policy(
   'public.cagg_meteo_daily',
-  start_offset => 1209600000::BIGINT,
-  end_offset => 86400000::BIGINT,
+  start_offset => 259200000::BIGINT,
+  end_offset => 600000::BIGINT,
   schedule_interval => INTERVAL '1 hour'
 );
 
 SELECT add_continuous_aggregate_policy(
   'public.cagg_ivtm_daily',
-  start_offset => 1209600000::BIGINT,
-  end_offset => 86400000::BIGINT,
+  start_offset => 259200000::BIGINT,
+  end_offset => 600000::BIGINT,
   schedule_interval => INTERVAL '1 hour'
 );
 
 SELECT add_continuous_aggregate_policy(
   'public.cagg_gas_daily',
-  start_offset => 1209600000::BIGINT,
-  end_offset => 86400000::BIGINT,
+  start_offset => 259200000::BIGINT,
+  end_offset => 600000::BIGINT,
   schedule_interval => INTERVAL '1 hour'
 );
 
