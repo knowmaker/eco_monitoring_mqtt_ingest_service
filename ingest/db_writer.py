@@ -6,6 +6,17 @@ from psycopg.types.json import Jsonb
 
 SUPPORTED_DEVICE_TYPES = ("gas", "dust", "meteo", "ivtm")
 
+# Временное решение: часть газовых устройств передает неправильный substanceCode.
+# Сырой MQTT-пакет сохраняем без изменений, но в gas_sensors.substance_code
+# записываем код газа по sensor_id, пока не исправлена прошивка источника.
+GAS_SENSOR_SUBSTANCE_OVERRIDES = {
+    1: "NO2",
+    2: "O3",
+    3: "NO",
+    4: "SO2",
+    5: "CO",
+}
+
 
 def normalize_epoch_ms(value: Any) -> Optional[int]:
     if value is None or isinstance(value, bool):
@@ -284,6 +295,7 @@ class MqttIngestDbWriter:
             sensor_id = to_int(sensor.get("id"))
             if sensor_id is None:
                 continue
+            substance_code = GAS_SENSOR_SUBSTANCE_OVERRIDES.get(sensor_id, sensor.get("substanceCode"))
             cur.execute(
                 """
                 INSERT INTO gas_sensors (
@@ -309,7 +321,7 @@ class MqttIngestDbWriter:
                     device_state_id,
                     device_timestamp_ms,
                     sensor_id,
-                    sensor.get("substanceCode"),
+                    substance_code,
                     to_float(sensor.get("value")),
                     sensor.get("scaleDimension"),
                     to_int(sensor.get("signal")),
