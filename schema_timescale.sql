@@ -8,6 +8,8 @@ DROP TABLE IF EXISTS gas_state CASCADE;
 DROP TABLE IF EXISTS dust_state CASCADE;
 DROP TABLE IF EXISTS meteo_state CASCADE;
 DROP TABLE IF EXISTS ivtm_state CASCADE;
+DROP TABLE IF EXISTS profile_levels CASCADE;
+DROP TABLE IF EXISTS profile_state CASCADE;
 DROP TABLE IF EXISTS device_state CASCADE;
 DROP TABLE IF EXISTS raw_mqtt_payload CASCADE;
 DROP TABLE IF EXISTS plc_state CASCADE;
@@ -101,7 +103,7 @@ CREATE TABLE IF NOT EXISTS device_state (
     plc_state_id BIGINT NOT NULL
         REFERENCES plc_state (id)
         ON DELETE CASCADE,
-    device_type TEXT NOT NULL CHECK (device_type IN ('gas', 'dust', 'meteo', 'ivtm')),
+    device_type TEXT NOT NULL CHECK (device_type IN ('gas', 'dust', 'meteo', 'ivtm', 'profile')),
     device_name TEXT,
     ping TEXT CHECK (ping IS NULL OR ping IN ('OK', 'BAD')),
     ping_time_ms BIGINT CHECK (ping_time_ms IS NULL OR ping_time_ms > 0),
@@ -229,5 +231,47 @@ SELECT create_hypertable(
 
 CREATE INDEX IF NOT EXISTS idx_ivtm_state_device_ts
     ON ivtm_state (device_timestamp_ms DESC);
+
+-- Temperature profile-specific fields (hypertable by device_timestamp_ms).
+CREATE TABLE IF NOT EXISTS profile_state (
+    device_state_id BIGINT NOT NULL
+        REFERENCES device_state (id)
+        ON DELETE CASCADE,
+    device_timestamp_ms BIGINT NOT NULL CHECK (device_timestamp_ms > 0),
+    inversion_power DOUBLE PRECISION,
+    inversion_lower DOUBLE PRECISION,
+    inversion_upper DOUBLE PRECISION,
+    PRIMARY KEY (device_state_id, device_timestamp_ms)
+);
+
+SELECT create_hypertable(
+    'profile_state',
+    'device_timestamp_ms',
+    if_not_exists => TRUE,
+    chunk_time_interval => 604800000
+);
+
+CREATE INDEX IF NOT EXISTS idx_profile_state_device_ts
+    ON profile_state (device_timestamp_ms DESC);
+
+CREATE TABLE IF NOT EXISTS profile_levels (
+    device_state_id BIGINT NOT NULL
+        REFERENCES device_state (id)
+        ON DELETE CASCADE,
+    device_timestamp_ms BIGINT NOT NULL CHECK (device_timestamp_ms > 0),
+    height DOUBLE PRECISION NOT NULL,
+    temperature DOUBLE PRECISION,
+    PRIMARY KEY (device_state_id, device_timestamp_ms, height)
+);
+
+SELECT create_hypertable(
+    'profile_levels',
+    'device_timestamp_ms',
+    if_not_exists => TRUE,
+    chunk_time_interval => 604800000
+);
+
+CREATE INDEX IF NOT EXISTS idx_profile_levels_height_ts
+    ON profile_levels (height, device_timestamp_ms DESC);
 
 COMMIT;

@@ -103,6 +103,38 @@
     "sensorIVTMerror": [],
     "timestamp": 1771241377181
   },
+  "profile": {
+    "ping": "OK",
+    "timeStamp": 1771241377181,
+    "deviceName": "MTR-5",
+    "levels": [
+      {
+        "height": 0,
+        "temperature": 15.88
+      },
+      {
+        "height": 25,
+        "temperature": 15.85
+      },
+      {
+        "height": 50,
+        "temperature": 15.82
+      },
+      {
+        "height": 75,
+        "temperature": 15.64
+      },
+      {
+        "height": 100,
+        "temperature": 15.45
+      }
+    ],
+    "inversion": {
+      "power": 0.0,
+      "lower": 0.0,
+      "upper": 0.0
+    }
+  },
   "deviceName": "PLC",
   "latitude": null,
   "longitude": null,

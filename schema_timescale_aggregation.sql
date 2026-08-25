@@ -16,16 +16,22 @@ SELECT set_integer_now_func('public.gas_sensors', 'public.now_ms', true);
 SELECT set_integer_now_func('public.dust_state',  'public.now_ms', true);
 SELECT set_integer_now_func('public.meteo_state', 'public.now_ms', true);
 SELECT set_integer_now_func('public.ivtm_state',  'public.now_ms', true);
+SELECT set_integer_now_func('public.profile_state',  'public.now_ms', true);
+SELECT set_integer_now_func('public.profile_levels', 'public.now_ms', true);
 
 -- 2) Recreate hourly and daily continuous aggregates.
 -- Daily aggregates are used by the UI month mode: one point per day inside the selected month.
 -- Day buckets are shifted to Europe/Moscow midnight for the local UI date.
 DROP MATERIALIZED VIEW IF EXISTS public.cagg_gas_daily CASCADE;
+DROP MATERIALIZED VIEW IF EXISTS public.cagg_profile_inversion_daily CASCADE;
+DROP MATERIALIZED VIEW IF EXISTS public.cagg_profile_levels_daily CASCADE;
 DROP MATERIALIZED VIEW IF EXISTS public.cagg_ivtm_daily CASCADE;
 DROP MATERIALIZED VIEW IF EXISTS public.cagg_meteo_daily CASCADE;
 DROP MATERIALIZED VIEW IF EXISTS public.cagg_dust_daily CASCADE;
 
 DROP MATERIALIZED VIEW IF EXISTS public.cagg_gas_hourly CASCADE;
+DROP MATERIALIZED VIEW IF EXISTS public.cagg_profile_inversion_hourly CASCADE;
+DROP MATERIALIZED VIEW IF EXISTS public.cagg_profile_levels_hourly CASCADE;
 DROP MATERIALIZED VIEW IF EXISTS public.cagg_ivtm_hourly CASCADE;
 DROP MATERIALIZED VIEW IF EXISTS public.cagg_meteo_hourly CASCADE;
 DROP MATERIALIZED VIEW IF EXISTS public.cagg_dust_hourly CASCADE;
@@ -99,6 +105,36 @@ WHERE ds.device_type = 'gas'
 GROUP BY 1, 2, 3
 WITH NO DATA;
 
+CREATE MATERIALIZED VIEW public.cagg_profile_levels_hourly
+WITH (timescaledb.continuous) AS
+SELECT
+  time_bucket(3600000::BIGINT, l.device_timestamp_ms) AS bucket_ms,
+  p.monitoring_post_id,
+  l.height,
+  percentile_cont(0.5) WITHIN GROUP (ORDER BY l.temperature) AS temperature_avg
+FROM public.profile_levels l
+JOIN public.device_state ds ON ds.id = l.device_state_id
+JOIN public.plc_state p     ON p.id = ds.plc_state_id
+WHERE ds.device_type = 'profile'
+GROUP BY 1, 2, 3
+WITH NO DATA;
+
+CREATE MATERIALIZED VIEW public.cagg_profile_inversion_hourly
+WITH (timescaledb.continuous) AS
+SELECT
+  time_bucket(3600000::BIGINT, s.device_timestamp_ms) AS bucket_ms,
+  p.monitoring_post_id,
+  percentile_cont(0.5) WITHIN GROUP (ORDER BY s.inversion_power) AS inversion_power_avg,
+  percentile_cont(0.5) WITHIN GROUP (ORDER BY s.inversion_lower) AS inversion_lower_avg,
+  percentile_cont(0.5) WITHIN GROUP (ORDER BY s.inversion_upper) AS inversion_upper_avg
+FROM public.profile_state s
+JOIN public.device_state ds ON ds.id = s.device_state_id
+JOIN public.plc_state p     ON p.id = ds.plc_state_id
+WHERE ds.device_type = 'profile'
+  AND s.inversion_power > 0
+GROUP BY 1, 2
+WITH NO DATA;
+
 CREATE MATERIALIZED VIEW public.cagg_dust_daily
 WITH (timescaledb.continuous) AS
 SELECT
@@ -168,6 +204,36 @@ WHERE ds.device_type = 'gas'
 GROUP BY 1, 2, 3
 WITH NO DATA;
 
+CREATE MATERIALIZED VIEW public.cagg_profile_levels_daily
+WITH (timescaledb.continuous) AS
+SELECT
+  time_bucket(86400000::BIGINT, l.device_timestamp_ms, 75600000::BIGINT) AS bucket_ms,
+  p.monitoring_post_id,
+  l.height,
+  percentile_cont(0.5) WITHIN GROUP (ORDER BY l.temperature) AS temperature_avg
+FROM public.profile_levels l
+JOIN public.device_state ds ON ds.id = l.device_state_id
+JOIN public.plc_state p     ON p.id = ds.plc_state_id
+WHERE ds.device_type = 'profile'
+GROUP BY 1, 2, 3
+WITH NO DATA;
+
+CREATE MATERIALIZED VIEW public.cagg_profile_inversion_daily
+WITH (timescaledb.continuous) AS
+SELECT
+  time_bucket(86400000::BIGINT, s.device_timestamp_ms, 75600000::BIGINT) AS bucket_ms,
+  p.monitoring_post_id,
+  percentile_cont(0.5) WITHIN GROUP (ORDER BY s.inversion_power) AS inversion_power_avg,
+  percentile_cont(0.5) WITHIN GROUP (ORDER BY s.inversion_lower) AS inversion_lower_avg,
+  percentile_cont(0.5) WITHIN GROUP (ORDER BY s.inversion_upper) AS inversion_upper_avg
+FROM public.profile_state s
+JOIN public.device_state ds ON ds.id = s.device_state_id
+JOIN public.plc_state p     ON p.id = ds.plc_state_id
+WHERE ds.device_type = 'profile'
+  AND s.inversion_power > 0
+GROUP BY 1, 2
+WITH NO DATA;
+
 -- 3) Indexes on aggregates.
 CREATE INDEX IF NOT EXISTS idx_cagg_dust_hourly_post_bucket
   ON public.cagg_dust_hourly (monitoring_post_id, bucket_ms DESC);
@@ -181,6 +247,12 @@ CREATE INDEX IF NOT EXISTS idx_cagg_ivtm_hourly_post_bucket
 CREATE INDEX IF NOT EXISTS idx_cagg_gas_hourly_post_substance_bucket
   ON public.cagg_gas_hourly (monitoring_post_id, substance_code, bucket_ms DESC);
 
+CREATE INDEX IF NOT EXISTS idx_cagg_profile_levels_hourly_post_height_bucket
+  ON public.cagg_profile_levels_hourly (monitoring_post_id, height, bucket_ms DESC);
+
+CREATE INDEX IF NOT EXISTS idx_cagg_profile_inversion_hourly_post_bucket
+  ON public.cagg_profile_inversion_hourly (monitoring_post_id, bucket_ms DESC);
+
 CREATE INDEX IF NOT EXISTS idx_cagg_dust_daily_post_bucket
   ON public.cagg_dust_daily (monitoring_post_id, bucket_ms DESC);
 
@@ -192,6 +264,12 @@ CREATE INDEX IF NOT EXISTS idx_cagg_ivtm_daily_post_bucket
 
 CREATE INDEX IF NOT EXISTS idx_cagg_gas_daily_post_substance_bucket
   ON public.cagg_gas_daily (monitoring_post_id, substance_code, bucket_ms DESC);
+
+CREATE INDEX IF NOT EXISTS idx_cagg_profile_levels_daily_post_height_bucket
+  ON public.cagg_profile_levels_daily (monitoring_post_id, height, bucket_ms DESC);
+
+CREATE INDEX IF NOT EXISTS idx_cagg_profile_inversion_daily_post_bucket
+  ON public.cagg_profile_inversion_daily (monitoring_post_id, bucket_ms DESC);
 
 -- 4) Auto refresh policies.
 -- Hourly aggregates: every 5 minutes, recalculate last 6 hours excluding latest 10 minutes.
@@ -223,6 +301,20 @@ SELECT add_continuous_aggregate_policy(
   schedule_interval => INTERVAL '5 minutes'
 );
 
+SELECT add_continuous_aggregate_policy(
+  'public.cagg_profile_levels_hourly',
+  start_offset => 21600000::BIGINT,
+  end_offset => 600000::BIGINT,
+  schedule_interval => INTERVAL '5 minutes'
+);
+
+SELECT add_continuous_aggregate_policy(
+  'public.cagg_profile_inversion_hourly',
+  start_offset => 21600000::BIGINT,
+  end_offset => 600000::BIGINT,
+  schedule_interval => INTERVAL '5 minutes'
+);
+
 -- Daily aggregates for month mode: every hour, recalculate last 3 days excluding latest 10 minutes.
 -- Older aggregate buckets are preserved and are not refreshed after raw data retention removes source rows.
 SELECT add_continuous_aggregate_policy(
@@ -248,6 +340,20 @@ SELECT add_continuous_aggregate_policy(
 
 SELECT add_continuous_aggregate_policy(
   'public.cagg_gas_daily',
+  start_offset => 259200000::BIGINT,
+  end_offset => 600000::BIGINT,
+  schedule_interval => INTERVAL '1 hour'
+);
+
+SELECT add_continuous_aggregate_policy(
+  'public.cagg_profile_levels_daily',
+  start_offset => 259200000::BIGINT,
+  end_offset => 600000::BIGINT,
+  schedule_interval => INTERVAL '1 hour'
+);
+
+SELECT add_continuous_aggregate_policy(
+  'public.cagg_profile_inversion_daily',
   start_offset => 259200000::BIGINT,
   end_offset => 600000::BIGINT,
   schedule_interval => INTERVAL '1 hour'

@@ -4,7 +4,7 @@ from typing import Any, Dict, Optional
 import psycopg
 from psycopg.types.json import Jsonb
 
-SUPPORTED_DEVICE_TYPES = ("gas", "dust", "meteo", "ivtm")
+SUPPORTED_DEVICE_TYPES = ("gas", "dust", "meteo", "ivtm", "profile")
 
 # Временное решение: часть газовых устройств передает неправильный substanceCode.
 # Сырой MQTT-пакет сохраняем без изменений, но в gas_sensors.substance_code
@@ -233,6 +233,8 @@ class MqttIngestDbWriter:
                         self._upsert_meteo(cur, device_state_id, device_timestamp_ms, device_payload)
                     elif device_type == "ivtm":
                         self._upsert_ivtm(cur, device_state_id, device_timestamp_ms, device_payload)
+                    elif device_type == "profile":
+                        self._upsert_profile(cur, device_state_id, device_timestamp_ms, device_payload)
 
             self.db_connection.commit()
             logging.info(
@@ -437,3 +439,63 @@ class MqttIngestDbWriter:
                 errors,
             ),
         )
+
+    def _upsert_profile(
+        self, cur, device_state_id: int, device_timestamp_ms: int, device_payload: Dict[str, Any]
+    ) -> None:
+        inversion = device_payload.get("inversion") if isinstance(device_payload.get("inversion"), dict) else {}
+        cur.execute(
+            """
+            INSERT INTO profile_state (
+                device_state_id,
+                device_timestamp_ms,
+                inversion_power,
+                inversion_lower,
+                inversion_upper
+            )
+            VALUES (%s, %s, %s, %s, %s)
+            ON CONFLICT (device_state_id, device_timestamp_ms)
+            DO UPDATE SET
+                inversion_power = EXCLUDED.inversion_power,
+                inversion_lower = EXCLUDED.inversion_lower,
+                inversion_upper = EXCLUDED.inversion_upper
+            """,
+            (
+                device_state_id,
+                device_timestamp_ms,
+                to_float(inversion.get("power")),
+                to_float(inversion.get("lower")),
+                to_float(inversion.get("upper")),
+            ),
+        )
+
+        levels = device_payload.get("levels")
+        if not isinstance(levels, list):
+            return
+
+        for level in levels:
+            if not isinstance(level, dict):
+                continue
+            height = to_float(level.get("height"))
+            if height is None:
+                continue
+            cur.execute(
+                """
+                INSERT INTO profile_levels (
+                    device_state_id,
+                    device_timestamp_ms,
+                    height,
+                    temperature
+                )
+                VALUES (%s, %s, %s, %s)
+                ON CONFLICT (device_state_id, device_timestamp_ms, height)
+                DO UPDATE SET
+                    temperature = EXCLUDED.temperature
+                """,
+                (
+                    device_state_id,
+                    device_timestamp_ms,
+                    height,
+                    to_float(level.get("temperature")),
+                ),
+            )
