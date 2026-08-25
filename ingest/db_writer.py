@@ -15,6 +15,7 @@ GAS_SENSOR_SUBSTANCE_OVERRIDES = {
     3: "NO",
     4: "SO2",
     5: "CO",
+    6: "H2S",
 }
 
 

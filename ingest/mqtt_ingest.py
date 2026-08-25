@@ -46,7 +46,7 @@ def main() -> None:
         client.username_pw_set(mqtt_username, mqtt_password)
 
     def on_connect(_client, _userdata, _flags, reason_code, _properties):
-        if reason_code == 0:
+        if not reason_code.is_failure:
             subscribed_topics = list(topic_aggregation_map.keys())
             logging.info("Connected to MQTT %s:%s; subscribing to %s", mqtt_host, mqtt_port, subscribed_topics)
             for topic in subscribed_topics:

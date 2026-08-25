@@ -61,6 +61,14 @@
         "scaleDimension": "ppm parts per million",
         "substanceCode": "CO",
         "id": 5
+      },
+      {
+        "signal": 0,
+        "status": "ready",
+        "value": 0.001,
+        "scaleDimension": "ppm parts per million",
+        "substanceCode": "H2S",
+        "id": 6
       }
     ]
   },
