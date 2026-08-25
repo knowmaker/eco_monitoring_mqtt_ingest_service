@@ -32,6 +32,7 @@ INSERT INTO pollutant_limits (
     ('NO', 0.4, NULL, 0.06),
     ('NO2', 0.2, 0.1, 0.04),
     ('O3', 0.16, 0.1, 0.03),
+    ('H2S', 0.008, NULL, NULL),
     ('SO2', 0.5, 0.05, NULL),
     ('PM1', NULL, NULL, NULL),
     ('PM2.5', 0.16, 0.035, 0.025),
