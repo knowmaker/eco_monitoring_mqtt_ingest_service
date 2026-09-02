@@ -10,7 +10,6 @@ from .db_writer import MqttIngestDbWriter
 
 
 DEFAULT_CLIENT_ID = "eco-monitoring-mqtt-ingest-writer"
-SUBSCRIBE_TOPIC = "devices/#"
 
 
 def load_broker_configs() -> list[dict[str, str | int | None]]:
@@ -22,12 +21,16 @@ def load_broker_configs() -> list[dict[str, str | int | None]]:
         host = os.getenv(f"{prefix}_HOST", "").strip()
         if not host:
             continue
+        topic = os.getenv(f"{prefix}_TOPIC", "").strip()
+        if not topic:
+            raise SystemExit(f"{prefix}_TOPIC is required when {prefix}_HOST is set.")
 
         broker_configs.append(
             {
                 "name": os.getenv(f"{prefix}_NAME", f"broker-{index}"),
                 "host": host,
                 "port": int(os.getenv(f"{prefix}_PORT", "1883")),
+                "topic": topic,
                 "client_id": os.getenv(f"{prefix}_CLIENT_ID", f"{DEFAULT_CLIENT_ID}-{index}"),
                 "username": os.getenv(f"{prefix}_USERNAME", "").strip() or None,
                 "password": os.getenv(f"{prefix}_PASSWORD"),
@@ -51,9 +54,9 @@ def build_client(config: dict[str, str | int | None], ingest_writer: MqttIngestD
                 config["name"],
                 config["host"],
                 config["port"],
-                SUBSCRIBE_TOPIC,
+                config["topic"],
             )
-            _client.subscribe(SUBSCRIBE_TOPIC)
+            _client.subscribe(str(config["topic"]))
         else:
             logging.error("MQTT connect failed for %s: reason_code=%s", config["name"], reason_code)
 

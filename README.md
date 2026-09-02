@@ -1,11 +1,11 @@
 # MQTT -> Data Ingest Service
 
-Сервис подписывается на MQTT-топик `devices/#` на одном или нескольких брокерах и сохраняет JSON в таблицы из `schema_timescale.sql`.
+Сервис подписывается на индивидуальный MQTT-топик каждого брокера и сохраняет JSON в таблицы из `schema_timescale.sql`.
 
 ## Что делает
 
 - Читает JSON из MQTT-брокеров, заданных в локальном `.env`.
-- На каждом брокере подписывается на `devices/#`.
+- Для каждого брокера использует свой `MQTT_BROKER_N_TOPIC`.
 - Раскладывает payload по таблицам:
   - `plc_state`
   - `device_state`
@@ -33,6 +33,7 @@ pip install -r requirements.txt
 - `MQTT_BROKER_N_NAME`
 - `MQTT_BROKER_N_HOST`
 - `MQTT_BROKER_N_PORT`
+- `MQTT_BROKER_N_TOPIC`
 - `MQTT_BROKER_N_CLIENT_ID`
 - `MQTT_BROKER_N_USERNAME`
 - `MQTT_BROKER_N_PASSWORD`
