@@ -1,4 +1,5 @@
 import logging
+from threading import Lock
 from typing import Any, Dict, Optional
 
 import psycopg
@@ -68,6 +69,7 @@ class MqttIngestDbWriter:
     def __init__(self, db_dsn: str) -> None:
         self.db_dsn = db_dsn
         self.db_connection = None
+        self._lock = Lock()
 
     def _ensure_connection(self) -> None:
         if self.db_connection is None or self.db_connection.closed:
@@ -99,153 +101,147 @@ class MqttIngestDbWriter:
         )
         return cur.fetchone()[0]
 
-    def write_payload(self, payload: Dict[str, Any], aggregation_period_min: int) -> None:
-        self._ensure_connection()
-        serial = str(payload.get("serial") or "UNKNOWN_SERIAL")
-        latitude = to_float(payload.get("latitude"))
-        longitude = to_float(payload.get("longitude"))
-        plc_timestamp_ms = normalize_epoch_ms(payload.get("timeStamp"))
-        if plc_timestamp_ms is None:
-            raise ValueError("Payload has no valid top-level timeStamp.")
+    def write_payload(self, payload: Dict[str, Any]) -> None:
+        with self._lock:
+            self._ensure_connection()
+            serial = str(payload.get("serial") or "UNKNOWN_SERIAL")
+            latitude = to_float(payload.get("latitude"))
+            longitude = to_float(payload.get("longitude"))
+            plc_timestamp_ms = normalize_epoch_ms(payload.get("timeStamp"))
+            if plc_timestamp_ms is None:
+                raise ValueError("Payload has no valid top-level timeStamp.")
 
-        try:
-            with self.db_connection.cursor() as cur:
-                monitoring_post_id = self._resolve_monitoring_post_id(
-                    cur=cur,
-                    serial=serial,
-                    latitude=latitude,
-                    longitude=longitude,
-                )
-
-                cur.execute(
-                    """
-                    INSERT INTO plc_state (
-                        monitoring_post_id,
-                        aggregation_period_min,
-                        plc_timestamp_ms,
-                        device_name,
-                        modbus_status,
-                        modbus_status_time_ms,
-                        rs485_status,
-                        rs485_status_time_ms,
-                        mem_total,
-                        mem_free,
-                        mem_used,
-                        cpu_temp
+            try:
+                with self.db_connection.cursor() as cur:
+                    monitoring_post_id = self._resolve_monitoring_post_id(
+                        cur=cur,
+                        serial=serial,
+                        latitude=latitude,
+                        longitude=longitude,
                     )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    ON CONFLICT (monitoring_post_id, aggregation_period_min, plc_timestamp_ms)
-                    DO UPDATE SET
-                        device_name = EXCLUDED.device_name,
-                        modbus_status = EXCLUDED.modbus_status,
-                        modbus_status_time_ms = EXCLUDED.modbus_status_time_ms,
-                        rs485_status = EXCLUDED.rs485_status,
-                        rs485_status_time_ms = EXCLUDED.rs485_status_time_ms,
-                        mem_total = EXCLUDED.mem_total,
-                        mem_free = EXCLUDED.mem_free,
-                        mem_used = EXCLUDED.mem_used,
-                        cpu_temp = EXCLUDED.cpu_temp,
-                        received_at = NOW()
-                    RETURNING id
-                    """,
-                    (
-                        monitoring_post_id,
-                        aggregation_period_min,
-                        plc_timestamp_ms,
-                        payload.get("deviceName"),
-                        payload.get("modbusStatus"),
-                        normalize_epoch_ms(payload.get("modbusStatusTime")),
-                        payload.get("rs485Status"),
-                        normalize_epoch_ms(payload.get("rs485StatusTime")),
-                        to_int(payload.get("memTotal")),
-                        to_int(payload.get("memFree")),
-                        to_int(payload.get("memUsed")),
-                        to_float(payload.get("cpuTemp")),
-                    ),
-                )
-                plc_id = cur.fetchone()[0]
-
-                cur.execute(
-                    """
-                    INSERT INTO raw_mqtt_payload (plc_state_id, payload)
-                    VALUES (%s, %s)
-                    ON CONFLICT (plc_state_id)
-                    DO UPDATE SET payload = EXCLUDED.payload
-                    """,
-                    (plc_id, Jsonb(payload)),
-                )
-
-                for device_type in SUPPORTED_DEVICE_TYPES:
-                    device_payload = payload.get(device_type)
-                    if not isinstance(device_payload, dict):
-                        continue
-
-                    number_reboot = device_payload.get("numberReboot")
-                    reboot_count = None
-                    reboot_time_ms = None
-                    if isinstance(number_reboot, dict):
-                        reboot_count = to_int(number_reboot.get("countReboot"))
-                        reboot_time_ms = normalize_epoch_ms(number_reboot.get("time"))
-
-                    device_timestamp_ms = extract_device_timestamp_ms(device_payload, plc_timestamp_ms)
 
                     cur.execute(
                         """
-                        INSERT INTO device_state (
-                            plc_state_id,
-                            device_type,
+                        INSERT INTO plc_state (
+                            monitoring_post_id,
+                            plc_timestamp_ms,
                             device_name,
-                            ping,
-                            ping_time_ms,
-                            device_timestamp_ms,
-                            number_reboot_count,
-                            number_reboot_time_ms
+                            modbus_status,
+                            modbus_status_time_ms,
+                            rs485_status,
+                            rs485_status_time_ms,
+                            mem_total,
+                            mem_free,
+                            mem_used,
+                            cpu_temp
                         )
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                        ON CONFLICT (plc_state_id, device_type)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        ON CONFLICT (monitoring_post_id, plc_timestamp_ms)
                         DO UPDATE SET
                             device_name = EXCLUDED.device_name,
-                            ping = EXCLUDED.ping,
-                            ping_time_ms = EXCLUDED.ping_time_ms,
-                            device_timestamp_ms = EXCLUDED.device_timestamp_ms,
-                            number_reboot_count = EXCLUDED.number_reboot_count,
-                            number_reboot_time_ms = EXCLUDED.number_reboot_time_ms
+                            modbus_status = EXCLUDED.modbus_status,
+                            modbus_status_time_ms = EXCLUDED.modbus_status_time_ms,
+                            rs485_status = EXCLUDED.rs485_status,
+                            rs485_status_time_ms = EXCLUDED.rs485_status_time_ms,
+                            mem_total = EXCLUDED.mem_total,
+                            mem_free = EXCLUDED.mem_free,
+                            mem_used = EXCLUDED.mem_used,
+                            cpu_temp = EXCLUDED.cpu_temp,
+                            received_at = NOW()
                         RETURNING id
                         """,
                         (
-                            plc_id,
-                            device_type,
-                            device_payload.get("deviceName"),
-                            device_payload.get("ping"),
-                            normalize_epoch_ms(device_payload.get("pingTime")),
-                            device_timestamp_ms,
-                            reboot_count,
-                            reboot_time_ms,
+                            monitoring_post_id,
+                            plc_timestamp_ms,
+                            payload.get("deviceName"),
+                            payload.get("modbusStatus"),
+                            normalize_epoch_ms(payload.get("modbusStatusTime")),
+                            payload.get("rs485Status"),
+                            normalize_epoch_ms(payload.get("rs485StatusTime")),
+                            to_int(payload.get("memTotal")),
+                            to_int(payload.get("memFree")),
+                            to_int(payload.get("memUsed")),
+                            to_float(payload.get("cpuTemp")),
                         ),
                     )
-                    device_state_id = cur.fetchone()[0]
+                    plc_id = cur.fetchone()[0]
 
-                    if device_type == "gas":
-                        self._upsert_gas(cur, device_state_id, device_timestamp_ms, device_payload)
-                    elif device_type == "dust":
-                        self._upsert_dust(cur, device_state_id, device_timestamp_ms, device_payload)
-                    elif device_type == "meteo":
-                        self._upsert_meteo(cur, device_state_id, device_timestamp_ms, device_payload)
-                    elif device_type == "ivtm":
-                        self._upsert_ivtm(cur, device_state_id, device_timestamp_ms, device_payload)
-                    elif device_type == "profile":
-                        self._upsert_profile(cur, device_state_id, device_timestamp_ms, device_payload)
+                    cur.execute(
+                        """
+                        INSERT INTO raw_mqtt_payload (plc_state_id, payload)
+                        VALUES (%s, %s)
+                        ON CONFLICT (plc_state_id)
+                        DO UPDATE SET payload = EXCLUDED.payload
+                        """,
+                        (plc_id, Jsonb(payload)),
+                    )
 
-            self.db_connection.commit()
-            logging.info(
-                "Saved payload: serial=%s plc_ts_ms=%s aggregation=%s",
-                serial,
-                plc_timestamp_ms,
-                aggregation_period_min,
-            )
-        except Exception:
-            self.db_connection.rollback()
-            raise
+                    for device_type in SUPPORTED_DEVICE_TYPES:
+                        device_payload = payload.get(device_type)
+                        if not isinstance(device_payload, dict):
+                            continue
+
+                        number_reboot = device_payload.get("numberReboot")
+                        reboot_count = None
+                        reboot_time_ms = None
+                        if isinstance(number_reboot, dict):
+                            reboot_count = to_int(number_reboot.get("countReboot"))
+                            reboot_time_ms = normalize_epoch_ms(number_reboot.get("time"))
+
+                        device_timestamp_ms = extract_device_timestamp_ms(device_payload, plc_timestamp_ms)
+
+                        cur.execute(
+                            """
+                            INSERT INTO device_state (
+                                plc_state_id,
+                                device_type,
+                                device_name,
+                                ping,
+                                ping_time_ms,
+                                device_timestamp_ms,
+                                number_reboot_count,
+                                number_reboot_time_ms
+                            )
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                            ON CONFLICT (plc_state_id, device_type)
+                            DO UPDATE SET
+                                device_name = EXCLUDED.device_name,
+                                ping = EXCLUDED.ping,
+                                ping_time_ms = EXCLUDED.ping_time_ms,
+                                device_timestamp_ms = EXCLUDED.device_timestamp_ms,
+                                number_reboot_count = EXCLUDED.number_reboot_count,
+                                number_reboot_time_ms = EXCLUDED.number_reboot_time_ms
+                            RETURNING id
+                            """,
+                            (
+                                plc_id,
+                                device_type,
+                                device_payload.get("deviceName"),
+                                device_payload.get("ping"),
+                                normalize_epoch_ms(device_payload.get("pingTime")),
+                                device_timestamp_ms,
+                                reboot_count,
+                                reboot_time_ms,
+                            ),
+                        )
+                        device_state_id = cur.fetchone()[0]
+
+                        if device_type == "gas":
+                            self._upsert_gas(cur, device_state_id, device_timestamp_ms, device_payload)
+                        elif device_type == "dust":
+                            self._upsert_dust(cur, device_state_id, device_timestamp_ms, device_payload)
+                        elif device_type == "meteo":
+                            self._upsert_meteo(cur, device_state_id, device_timestamp_ms, device_payload)
+                        elif device_type == "ivtm":
+                            self._upsert_ivtm(cur, device_state_id, device_timestamp_ms, device_payload)
+                        elif device_type == "profile":
+                            self._upsert_profile(cur, device_state_id, device_timestamp_ms, device_payload)
+
+                self.db_connection.commit()
+                logging.info("Saved payload: serial=%s plc_ts_ms=%s", serial, plc_timestamp_ms)
+            except Exception:
+                self.db_connection.rollback()
+                raise
 
     def _upsert_gas(
         self, cur, device_state_id: int, device_timestamp_ms: int, device_payload: Dict[str, Any]

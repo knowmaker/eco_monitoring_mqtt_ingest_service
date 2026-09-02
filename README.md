@@ -1,10 +1,11 @@
-﻿# MQTT -> Data Ingest Service
+# MQTT -> Data Ingest Service
 
-Сервис подписывается на MQTT-топики и сохраняет JSON в таблицы из `schema_timescale.sql`.
+Сервис подписывается на MQTT-топик `devices/#` на одном или нескольких брокерах и сохраняет JSON в таблицы из `schema_timescale.sql`.
 
 ## Что делает
 
-- Читает JSON из `broker.emqx.io` (или другого брокера из `.env`).
+- Читает JSON из MQTT-брокеров, заданных в локальном `.env`.
+- На каждом брокере подписывается на `devices/#`.
 - Раскладывает payload по таблицам:
   - `plc_state`
   - `device_state`
@@ -22,21 +23,22 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-Отредактируйте `.env`:
+## Конфигурация
 
-- `DB_DSN` - строка подключения к PostgreSQL/Timescale
-- `MQTT_HOST` - адрес MQTT-брокера
-- `MQTT_PORT` - порт MQTT-брокера
-- `MQTT_TOPIC_AVG5MIN` - топик `devices/data/avg5min`
-- `MQTT_TOPIC_AVG20MIN` - топик `devices/data/avg20min`
-- `MQTT_CLIENT_ID` - client id MQTT-клиента
-- `MQTT_USERNAME` / `MQTT_PASSWORD` - при необходимости
-- `MQTT_KEEPALIVE` - keepalive в секундах
+Все значения подключения хранятся только в локальном `.env`.
+Обязательные и поддерживаемые переменные:
 
-Агрегация определяется автоматически по топику:
+- `DB_DSN`
+- `MQTT_BROKER_COUNT`
+- `MQTT_BROKER_N_NAME`
+- `MQTT_BROKER_N_HOST`
+- `MQTT_BROKER_N_PORT`
+- `MQTT_BROKER_N_CLIENT_ID`
+- `MQTT_BROKER_N_USERNAME`
+- `MQTT_BROKER_N_PASSWORD`
+- `MQTT_BROKER_N_KEEPALIVE`
 
-- `devices/data/avg5min` -> `aggregation_period_min = 5`
-- `devices/data/avg20min` -> `aggregation_period_min = 20`
+`N` - номер брокера от `1` до `MQTT_BROKER_COUNT`. Брокер с пустым `MQTT_BROKER_N_HOST` пропускается.
 
 ## Запуск
 
