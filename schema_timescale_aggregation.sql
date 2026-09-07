@@ -126,7 +126,8 @@ SELECT
   p.monitoring_post_id,
   percentile_cont(0.5) WITHIN GROUP (ORDER BY s.inversion_power) AS inversion_power_avg,
   percentile_cont(0.5) WITHIN GROUP (ORDER BY s.inversion_lower) AS inversion_lower_avg,
-  percentile_cont(0.5) WITHIN GROUP (ORDER BY s.inversion_upper) AS inversion_upper_avg
+  percentile_cont(0.5) WITHIN GROUP (ORDER BY s.inversion_upper) AS inversion_upper_avg,
+  percentile_cont(0.5) WITHIN GROUP (ORDER BY s.inversion_delta_t) AS inversion_delta_t_avg
 FROM public.profile_state s
 JOIN public.device_state ds ON ds.id = s.device_state_id
 JOIN public.plc_state p     ON p.id = ds.plc_state_id
@@ -225,7 +226,8 @@ SELECT
   p.monitoring_post_id,
   percentile_cont(0.5) WITHIN GROUP (ORDER BY s.inversion_power) AS inversion_power_avg,
   percentile_cont(0.5) WITHIN GROUP (ORDER BY s.inversion_lower) AS inversion_lower_avg,
-  percentile_cont(0.5) WITHIN GROUP (ORDER BY s.inversion_upper) AS inversion_upper_avg
+  percentile_cont(0.5) WITHIN GROUP (ORDER BY s.inversion_upper) AS inversion_upper_avg,
+  percentile_cont(0.5) WITHIN GROUP (ORDER BY s.inversion_delta_t) AS inversion_delta_t_avg
 FROM public.profile_state s
 JOIN public.device_state ds ON ds.id = s.device_state_id
 JOIN public.plc_state p     ON p.id = ds.plc_state_id

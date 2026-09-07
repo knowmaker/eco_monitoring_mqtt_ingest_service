@@ -447,14 +447,16 @@ class MqttIngestDbWriter:
                 device_timestamp_ms,
                 inversion_power,
                 inversion_lower,
-                inversion_upper
+                inversion_upper,
+                inversion_delta_t
             )
-            VALUES (%s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s)
             ON CONFLICT (device_state_id, device_timestamp_ms)
             DO UPDATE SET
                 inversion_power = EXCLUDED.inversion_power,
                 inversion_lower = EXCLUDED.inversion_lower,
-                inversion_upper = EXCLUDED.inversion_upper
+                inversion_upper = EXCLUDED.inversion_upper,
+                inversion_delta_t = EXCLUDED.inversion_delta_t
             """,
             (
                 device_state_id,
@@ -462,6 +464,7 @@ class MqttIngestDbWriter:
                 to_float(inversion.get("power")),
                 to_float(inversion.get("lower")),
                 to_float(inversion.get("upper")),
+                to_float(inversion.get("deltaT")),
             ),
         )
 

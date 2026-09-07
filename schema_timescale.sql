@@ -237,6 +237,7 @@ CREATE TABLE IF NOT EXISTS profile_state (
     inversion_power DOUBLE PRECISION,
     inversion_lower DOUBLE PRECISION,
     inversion_upper DOUBLE PRECISION,
+    inversion_delta_t DOUBLE PRECISION,
     PRIMARY KEY (device_state_id, device_timestamp_ms)
 );
 
