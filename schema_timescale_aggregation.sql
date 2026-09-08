@@ -1,5 +1,5 @@
 -- TimescaleDB aggregation setup for existing production data.
--- Safe to re-run: continuous aggregates are recreated, retention policies are reset.
+-- Safe to re-run against the current schema: continuous aggregates and derived views are recreated.
 
 CREATE EXTENSION IF NOT EXISTS timescaledb;
 
@@ -19,18 +19,96 @@ SELECT set_integer_now_func('public.ivtm_state',  'public.now_ms', true);
 SELECT set_integer_now_func('public.profile_state',  'public.now_ms', true);
 SELECT set_integer_now_func('public.profile_levels', 'public.now_ms', true);
 
+-- Calculate the strongest contiguous inversion segment in an already aggregated
+-- temperature profile. Power is the layer thickness in meters.
+CREATE OR REPLACE FUNCTION public.calculate_profile_inversion(
+  heights DOUBLE PRECISION[],
+  temperatures DOUBLE PRECISION[]
+)
+RETURNS TABLE (
+  inversion_power DOUBLE PRECISION,
+  inversion_lower DOUBLE PRECISION,
+  inversion_upper DOUBLE PRECISION,
+  inversion_delta_t DOUBLE PRECISION
+)
+LANGUAGE SQL
+IMMUTABLE
+STRICT
+AS $$
+WITH points AS (
+  SELECT
+    h AS height,
+    t AS temperature
+  FROM unnest(heights, temperatures) AS profile(h, t)
+  WHERE h IS NOT NULL
+    AND t IS NOT NULL
+),
+edges AS (
+  SELECT
+    lag(height) OVER (ORDER BY height) AS lower_height,
+    height AS upper_height,
+    lag(temperature) OVER (ORDER BY height) AS lower_temperature,
+    temperature AS upper_temperature
+  FROM points
+),
+marked_edges AS (
+  SELECT
+    *,
+    upper_temperature > lower_temperature AS is_inversion_edge
+  FROM edges
+  WHERE lower_height IS NOT NULL
+),
+grouped_edges AS (
+  SELECT
+    *,
+    sum(CASE WHEN is_inversion_edge THEN 0 ELSE 1 END) OVER (ORDER BY lower_height) AS segment_id
+  FROM marked_edges
+),
+segments AS (
+  SELECT
+    min(lower_height) AS lower_height,
+    max(upper_height) AS upper_height,
+    (array_agg(lower_temperature ORDER BY lower_height))[1] AS lower_temperature,
+    (array_agg(upper_temperature ORDER BY upper_height DESC))[1] AS upper_temperature
+  FROM grouped_edges
+  WHERE is_inversion_edge
+  GROUP BY segment_id
+),
+ranked_segments AS (
+  SELECT
+    upper_height - lower_height AS inversion_power,
+    lower_height AS inversion_lower,
+    upper_height AS inversion_upper,
+    upper_temperature - lower_temperature AS inversion_delta_t
+  FROM segments
+  WHERE upper_height > lower_height
+    AND upper_temperature > lower_temperature
+  ORDER BY
+    upper_height - lower_height DESC,
+    upper_temperature - lower_temperature DESC,
+    lower_height ASC
+  LIMIT 1
+)
+SELECT
+  inversion_power,
+  inversion_lower,
+  inversion_upper,
+  inversion_delta_t
+FROM ranked_segments;
+$$;
+
 -- 2) Recreate hourly and daily continuous aggregates.
 -- Daily aggregates are used by the UI month mode: one point per day inside the selected month.
 -- Day buckets are shifted to Europe/Moscow midnight for the local UI date.
 DROP MATERIALIZED VIEW IF EXISTS public.cagg_gas_daily CASCADE;
-DROP MATERIALIZED VIEW IF EXISTS public.cagg_profile_inversion_daily CASCADE;
+DROP VIEW IF EXISTS public.cagg_profile_inversion_daily;
 DROP MATERIALIZED VIEW IF EXISTS public.cagg_profile_levels_daily CASCADE;
 DROP MATERIALIZED VIEW IF EXISTS public.cagg_ivtm_daily CASCADE;
 DROP MATERIALIZED VIEW IF EXISTS public.cagg_meteo_daily CASCADE;
 DROP MATERIALIZED VIEW IF EXISTS public.cagg_dust_daily CASCADE;
 
 DROP MATERIALIZED VIEW IF EXISTS public.cagg_gas_hourly CASCADE;
-DROP MATERIALIZED VIEW IF EXISTS public.cagg_profile_inversion_hourly CASCADE;
+DROP VIEW IF EXISTS public.cagg_profile_inversion_hourly;
 DROP MATERIALIZED VIEW IF EXISTS public.cagg_profile_levels_hourly CASCADE;
 DROP MATERIALIZED VIEW IF EXISTS public.cagg_ivtm_hourly CASCADE;
 DROP MATERIALIZED VIEW IF EXISTS public.cagg_meteo_hourly CASCADE;
@@ -111,7 +189,7 @@ SELECT
   time_bucket(3600000::BIGINT, l.device_timestamp_ms) AS bucket_ms,
   p.monitoring_post_id,
   l.height,
-  percentile_cont(0.5) WITHIN GROUP (ORDER BY l.temperature) AS temperature_avg
+  AVG(l.temperature) AS temperature_avg
 FROM public.profile_levels l
 JOIN public.device_state ds ON ds.id = l.device_state_id
 JOIN public.plc_state p     ON p.id = ds.plc_state_id
@@ -119,22 +197,28 @@ WHERE ds.device_type = 'profile'
 GROUP BY 1, 2, 3
 WITH NO DATA;
 
-CREATE MATERIALIZED VIEW public.cagg_profile_inversion_hourly
-WITH (timescaledb.continuous) AS
+-- Inversion is derived from aggregated temperature levels, so it does not need
+-- its own continuous aggregate refresh policy.
+CREATE VIEW public.cagg_profile_inversion_hourly AS
 SELECT
-  time_bucket(3600000::BIGINT, s.device_timestamp_ms) AS bucket_ms,
-  p.monitoring_post_id,
-  percentile_cont(0.5) WITHIN GROUP (ORDER BY s.inversion_power) AS inversion_power_avg,
-  percentile_cont(0.5) WITHIN GROUP (ORDER BY s.inversion_lower) AS inversion_lower_avg,
-  percentile_cont(0.5) WITHIN GROUP (ORDER BY s.inversion_upper) AS inversion_upper_avg,
-  percentile_cont(0.5) WITHIN GROUP (ORDER BY s.inversion_delta_t) AS inversion_delta_t_avg
-FROM public.profile_state s
-JOIN public.device_state ds ON ds.id = s.device_state_id
-JOIN public.plc_state p     ON p.id = ds.plc_state_id
-WHERE ds.device_type = 'profile'
-  AND s.inversion_power > 0
-GROUP BY 1, 2
-WITH NO DATA;
+  profile.bucket_ms,
+  profile.monitoring_post_id,
+  inversion.inversion_power AS inversion_power_avg,
+  inversion.inversion_lower AS inversion_lower_avg,
+  inversion.inversion_upper AS inversion_upper_avg,
+  inversion.inversion_delta_t AS inversion_delta_t_avg
+FROM (
+  SELECT
+    bucket_ms,
+    monitoring_post_id,
+    array_agg(height ORDER BY height) AS heights,
+    array_agg(temperature_avg ORDER BY height) AS temperatures
+  FROM public.cagg_profile_levels_hourly
+  WHERE temperature_avg IS NOT NULL
+  GROUP BY 1, 2
+  HAVING count(*) >= 2
+) profile
+CROSS JOIN LATERAL public.calculate_profile_inversion(profile.heights, profile.temperatures) inversion;
 
 CREATE MATERIALIZED VIEW public.cagg_dust_daily
 WITH (timescaledb.continuous) AS
@@ -211,7 +295,7 @@ SELECT
   time_bucket(86400000::BIGINT, l.device_timestamp_ms, 75600000::BIGINT) AS bucket_ms,
   p.monitoring_post_id,
   l.height,
-  percentile_cont(0.5) WITHIN GROUP (ORDER BY l.temperature) AS temperature_avg
+  AVG(l.temperature) AS temperature_avg
 FROM public.profile_levels l
 JOIN public.device_state ds ON ds.id = l.device_state_id
 JOIN public.plc_state p     ON p.id = ds.plc_state_id
@@ -219,22 +303,26 @@ WHERE ds.device_type = 'profile'
 GROUP BY 1, 2, 3
 WITH NO DATA;
 
-CREATE MATERIALIZED VIEW public.cagg_profile_inversion_daily
-WITH (timescaledb.continuous) AS
+CREATE VIEW public.cagg_profile_inversion_daily AS
 SELECT
-  time_bucket(86400000::BIGINT, s.device_timestamp_ms, 75600000::BIGINT) AS bucket_ms,
-  p.monitoring_post_id,
-  percentile_cont(0.5) WITHIN GROUP (ORDER BY s.inversion_power) AS inversion_power_avg,
-  percentile_cont(0.5) WITHIN GROUP (ORDER BY s.inversion_lower) AS inversion_lower_avg,
-  percentile_cont(0.5) WITHIN GROUP (ORDER BY s.inversion_upper) AS inversion_upper_avg,
-  percentile_cont(0.5) WITHIN GROUP (ORDER BY s.inversion_delta_t) AS inversion_delta_t_avg
-FROM public.profile_state s
-JOIN public.device_state ds ON ds.id = s.device_state_id
-JOIN public.plc_state p     ON p.id = ds.plc_state_id
-WHERE ds.device_type = 'profile'
-  AND s.inversion_power > 0
-GROUP BY 1, 2
-WITH NO DATA;
+  profile.bucket_ms,
+  profile.monitoring_post_id,
+  inversion.inversion_power AS inversion_power_avg,
+  inversion.inversion_lower AS inversion_lower_avg,
+  inversion.inversion_upper AS inversion_upper_avg,
+  inversion.inversion_delta_t AS inversion_delta_t_avg
+FROM (
+  SELECT
+    bucket_ms,
+    monitoring_post_id,
+    array_agg(height ORDER BY height) AS heights,
+    array_agg(temperature_avg ORDER BY height) AS temperatures
+  FROM public.cagg_profile_levels_daily
+  WHERE temperature_avg IS NOT NULL
+  GROUP BY 1, 2
+  HAVING count(*) >= 2
+) profile
+CROSS JOIN LATERAL public.calculate_profile_inversion(profile.heights, profile.temperatures) inversion;
 
 -- 3) Indexes on aggregates.
 CREATE INDEX IF NOT EXISTS idx_cagg_dust_hourly_post_bucket
@@ -252,9 +340,6 @@ CREATE INDEX IF NOT EXISTS idx_cagg_gas_hourly_post_substance_bucket
 CREATE INDEX IF NOT EXISTS idx_cagg_profile_levels_hourly_post_height_bucket
   ON public.cagg_profile_levels_hourly (monitoring_post_id, height, bucket_ms DESC);
 
-CREATE INDEX IF NOT EXISTS idx_cagg_profile_inversion_hourly_post_bucket
-  ON public.cagg_profile_inversion_hourly (monitoring_post_id, bucket_ms DESC);
-
 CREATE INDEX IF NOT EXISTS idx_cagg_dust_daily_post_bucket
   ON public.cagg_dust_daily (monitoring_post_id, bucket_ms DESC);
 
@@ -269,9 +354,6 @@ CREATE INDEX IF NOT EXISTS idx_cagg_gas_daily_post_substance_bucket
 
 CREATE INDEX IF NOT EXISTS idx_cagg_profile_levels_daily_post_height_bucket
   ON public.cagg_profile_levels_daily (monitoring_post_id, height, bucket_ms DESC);
-
-CREATE INDEX IF NOT EXISTS idx_cagg_profile_inversion_daily_post_bucket
-  ON public.cagg_profile_inversion_daily (monitoring_post_id, bucket_ms DESC);
 
 -- 4) Auto refresh policies.
 -- Hourly aggregates: every 5 minutes, recalculate last 6 hours excluding latest 10 minutes.
@@ -310,13 +392,6 @@ SELECT add_continuous_aggregate_policy(
   schedule_interval => INTERVAL '5 minutes'
 );
 
-SELECT add_continuous_aggregate_policy(
-  'public.cagg_profile_inversion_hourly',
-  start_offset => 21600000::BIGINT,
-  end_offset => 600000::BIGINT,
-  schedule_interval => INTERVAL '5 minutes'
-);
-
 -- Daily aggregates for month mode: every hour, recalculate last 3 days excluding latest 10 minutes.
 -- Older aggregate buckets are preserved and are not refreshed after raw data retention removes source rows.
 SELECT add_continuous_aggregate_policy(
@@ -349,13 +424,6 @@ SELECT add_continuous_aggregate_policy(
 
 SELECT add_continuous_aggregate_policy(
   'public.cagg_profile_levels_daily',
-  start_offset => 259200000::BIGINT,
-  end_offset => 600000::BIGINT,
-  schedule_interval => INTERVAL '1 hour'
-);
-
-SELECT add_continuous_aggregate_policy(
-  'public.cagg_profile_inversion_daily',
   start_offset => 259200000::BIGINT,
   end_offset => 600000::BIGINT,
   schedule_interval => INTERVAL '1 hour'
