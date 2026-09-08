@@ -373,7 +373,15 @@ DECLARE
   deleted_count BIGINT;
 BEGIN
   DELETE FROM public.plc_state
-  WHERE plc_timestamp_ms < public.now_ms() - 1209600000::BIGINT;
+  WHERE plc_timestamp_ms < public.now_ms() - 1209600000::BIGINT
+    AND id NOT IN (
+      SELECT DISTINCT ON (p.monitoring_post_id, ds.device_type)
+        p.id
+      FROM public.plc_state p
+      JOIN public.device_state ds ON ds.plc_state_id = p.id
+      WHERE ds.ping = 'OK'
+      ORDER BY p.monitoring_post_id, ds.device_type, p.plc_timestamp_ms DESC, ds.id DESC
+    );
 
   GET DIAGNOSTICS deleted_count = ROW_COUNT;
   RETURN deleted_count;
