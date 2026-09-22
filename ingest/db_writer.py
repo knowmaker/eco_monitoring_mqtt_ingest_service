@@ -89,12 +89,12 @@ class MqttIngestDbWriter:
     ) -> int:
         cur.execute(
             """
-            INSERT INTO monitoring_posts (serial, latitude, longitude, is_confirmed)
-            VALUES (%s, %s, %s, FALSE)
-            ON CONFLICT (serial)
+            INSERT INTO monitoring_posts (serial, latitude, longitude, is_confirmed, active_from)
+            VALUES (%s, %s, %s, FALSE, NOW())
+            ON CONFLICT (serial) WHERE active_to IS NULL
             DO UPDATE SET
-                latitude = COALESCE(EXCLUDED.latitude, monitoring_posts.latitude),
-                longitude = COALESCE(EXCLUDED.longitude, monitoring_posts.longitude)
+                latitude = COALESCE(monitoring_posts.latitude, EXCLUDED.latitude),
+                longitude = COALESCE(monitoring_posts.longitude, EXCLUDED.longitude)
             RETURNING id
             """,
             (serial, latitude, longitude),

@@ -45,23 +45,29 @@ ON CONFLICT (pollutant_code) DO UPDATE SET
     pdk_daily = EXCLUDED.pdk_daily,
     pdk_annual = EXCLUDED.pdk_annual;
 
--- Monitoring posts metadata (one row per station serial).
+-- Monitoring posts metadata (one row per station location/deployment).
 CREATE TABLE IF NOT EXISTS monitoring_posts (
     id BIGSERIAL PRIMARY KEY,
-    serial TEXT NOT NULL UNIQUE,
+    serial TEXT NOT NULL,
     name TEXT,
     post_type TEXT CHECK (post_type IS NULL OR post_type IN ('stationary', 'mobile', 'drone')),
     latitude DOUBLE PRECISION CHECK (latitude IS NULL OR latitude BETWEEN -90 AND 90),
     longitude DOUBLE PRECISION CHECK (longitude IS NULL OR longitude BETWEEN -180 AND 180),
     notes TEXT,
-    is_confirmed BOOLEAN NOT NULL DEFAULT FALSE
+    is_confirmed BOOLEAN NOT NULL DEFAULT FALSE,
+    active_from TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    active_to TIMESTAMPTZ
 );
 
 CREATE INDEX IF NOT EXISTS idx_monitoring_posts_serial
     ON monitoring_posts (serial);
 
 CREATE INDEX IF NOT EXISTS idx_monitoring_posts_confirmed
-    ON monitoring_posts (is_confirmed, serial);
+    ON monitoring_posts (is_confirmed, active_to, serial);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_monitoring_posts_active_serial
+    ON monitoring_posts (serial)
+    WHERE active_to IS NULL;
 
 -- PLC-level packet state (regular table).
 CREATE TABLE IF NOT EXISTS plc_state (
