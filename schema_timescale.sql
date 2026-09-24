@@ -170,7 +170,7 @@ CREATE TABLE IF NOT EXISTS gas_sensors (
     substance_code TEXT,
     raw_value DOUBLE PRECISION,
     value DOUBLE PRECISION,
-    scale_dimension TEXT,
+    scale_dimension TEXT CHECK (scale_dimension IS NULL OR scale_dimension IN ('ppm', 'mg/m3')),
     signal BIGINT,
     sensor_status TEXT,
     PRIMARY KEY (device_state_id, device_timestamp_ms, sensor_id),

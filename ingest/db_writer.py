@@ -339,7 +339,7 @@ class MqttIngestDbWriter:
                     substance_code,
                     raw_value,
                     normalized_value,
-                    sensor.get("scaleDimension"),
+                    source_unit,
                     to_int(sensor.get("signal")),
                     sensor.get("status"),
                 ),
