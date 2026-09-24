@@ -6,6 +6,7 @@ import psycopg
 from psycopg.types.json import Jsonb
 
 SUPPORTED_DEVICE_TYPES = ("gas", "dust", "meteo", "ivtm", "profile")
+GAS_TARGET_UNIT = "mg/m3"
 
 # Временное решение: часть газовых устройств передает неправильный substanceCode.
 # Сырой MQTT-пакет сохраняем без изменений, но в gas_sensors.substance_code
@@ -55,6 +56,15 @@ def to_int(value: Any) -> Optional[int]:
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def normalize_gas_unit(value: Any) -> Optional[str]:
+    text = str(value).strip().lower()
+    if text == "ppm" or text == "ppm parts per million":
+        return "ppm"
+    if text == "mg/m3":
+        return GAS_TARGET_UNIT
+    return text
 
 
 def extract_device_timestamp_ms(device_payload: Dict[str, Any], fallback_ms: int) -> int:
@@ -288,6 +298,7 @@ class MqttIngestDbWriter:
         if not isinstance(sensors, list):
             return
 
+        conversions = self._load_gas_unit_conversions(cur)
         for sensor in sensors:
             if not isinstance(sensor, dict):
                 continue
@@ -295,6 +306,9 @@ class MqttIngestDbWriter:
             if sensor_id is None:
                 continue
             substance_code = GAS_SENSOR_SUBSTANCE_OVERRIDES.get(sensor_id, sensor.get("substanceCode"))
+            raw_value = to_float(sensor.get("value"))
+            source_unit = normalize_gas_unit(sensor.get("scaleDimension"))
+            normalized_value = self._normalize_gas_value(raw_value, substance_code, source_unit, conversions)
             cur.execute(
                 """
                 INSERT INTO gas_sensors (
@@ -302,15 +316,17 @@ class MqttIngestDbWriter:
                     device_timestamp_ms,
                     sensor_id,
                     substance_code,
+                    raw_value,
                     value,
                     scale_dimension,
                     signal,
                     sensor_status
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (device_state_id, device_timestamp_ms, sensor_id)
                 DO UPDATE SET
                     substance_code = EXCLUDED.substance_code,
+                    raw_value = EXCLUDED.raw_value,
                     value = EXCLUDED.value,
                     scale_dimension = EXCLUDED.scale_dimension,
                     signal = EXCLUDED.signal,
@@ -321,12 +337,40 @@ class MqttIngestDbWriter:
                     device_timestamp_ms,
                     sensor_id,
                     substance_code,
-                    to_float(sensor.get("value")),
+                    raw_value,
+                    normalized_value,
                     sensor.get("scaleDimension"),
                     to_int(sensor.get("signal")),
                     sensor.get("status"),
                 ),
             )
+
+    def _load_gas_unit_conversions(self, cur) -> Dict[tuple[str, str], float]:
+        cur.execute(
+            """
+            SELECT substance_code, source_unit, multiplier
+            FROM gas_unit_conversions
+            WHERE target_unit = %s
+            """,
+            (GAS_TARGET_UNIT,),
+        )
+        return {
+            (substance_code, source_unit): float(multiplier)
+            for substance_code, source_unit, multiplier in cur.fetchall()
+        }
+
+    def _normalize_gas_value(
+        self,
+        raw_value: Optional[float],
+        substance_code: Optional[str],
+        source_unit: Optional[str],
+        conversions: Dict[tuple[str, str], float],
+    ) -> Optional[float]:
+        if raw_value is None:
+            return None
+        if source_unit == GAS_TARGET_UNIT:
+            return raw_value
+        return raw_value * conversions[(substance_code, source_unit)]
 
     def _upsert_dust(
         self, cur, device_state_id: int, device_timestamp_ms: int, device_payload: Dict[str, Any]

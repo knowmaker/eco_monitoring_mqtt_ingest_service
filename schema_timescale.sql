@@ -14,6 +14,7 @@ DROP TABLE IF EXISTS device_state CASCADE;
 DROP TABLE IF EXISTS raw_mqtt_payload CASCADE;
 DROP TABLE IF EXISTS plc_state CASCADE;
 DROP TABLE IF EXISTS monitoring_posts CASCADE;
+DROP TABLE IF EXISTS gas_unit_conversions CASCADE;
 DROP TABLE IF EXISTS pollutant_limits CASCADE;
 
 -- Pollutant limit reference values for ambient air, mg/m3.
@@ -44,6 +45,31 @@ ON CONFLICT (pollutant_code) DO UPDATE SET
     pdk_max_once = EXCLUDED.pdk_max_once,
     pdk_daily = EXCLUDED.pdk_daily,
     pdk_annual = EXCLUDED.pdk_annual;
+
+-- Gas concentration conversion factors to the system unit (mg/m3).
+-- Multipliers for ppm are defined for normal conditions.
+CREATE TABLE IF NOT EXISTS gas_unit_conversions (
+    substance_code TEXT NOT NULL,
+    source_unit TEXT NOT NULL,
+    target_unit TEXT NOT NULL DEFAULT 'mg/m3',
+    multiplier DOUBLE PRECISION NOT NULL CHECK (multiplier > 0),
+    PRIMARY KEY (substance_code, source_unit, target_unit)
+);
+
+INSERT INTO gas_unit_conversions (
+    substance_code,
+    source_unit,
+    target_unit,
+    multiplier
+) VALUES
+    ('CO', 'ppm', 'mg/m3', 1.2496),
+    ('NO', 'ppm', 'mg/m3', 1.3387),
+    ('NO2', 'ppm', 'mg/m3', 2.0525),
+    ('O3', 'ppm', 'mg/m3', 2.1414),
+    ('SO2', 'ppm', 'mg/m3', 2.8583),
+    ('H2S', 'ppm', 'mg/m3', 1.5205)
+ON CONFLICT (substance_code, source_unit, target_unit) DO UPDATE SET
+    multiplier = EXCLUDED.multiplier;
 
 -- Monitoring posts metadata (one row per station location/deployment).
 CREATE TABLE IF NOT EXISTS monitoring_posts (
@@ -142,6 +168,7 @@ CREATE TABLE IF NOT EXISTS gas_sensors (
     device_timestamp_ms BIGINT NOT NULL CHECK (device_timestamp_ms > 0),
     sensor_id INTEGER NOT NULL CHECK (sensor_id > 0),
     substance_code TEXT,
+    raw_value DOUBLE PRECISION,
     value DOUBLE PRECISION,
     scale_dimension TEXT,
     signal BIGINT,
