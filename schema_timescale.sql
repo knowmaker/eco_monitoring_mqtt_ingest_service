@@ -47,7 +47,7 @@ ON CONFLICT (pollutant_code) DO UPDATE SET
     pdk_annual = EXCLUDED.pdk_annual;
 
 -- Gas concentration conversion factors to the system unit (mg/m3).
--- Multipliers for ppm are defined for normal conditions.
+-- Multipliers for ppm are defined for 25 C and 1 atm.
 CREATE TABLE IF NOT EXISTS gas_unit_conversions (
     substance_code TEXT NOT NULL,
     source_unit TEXT NOT NULL,
@@ -62,12 +62,12 @@ INSERT INTO gas_unit_conversions (
     target_unit,
     multiplier
 ) VALUES
-    ('CO', 'ppm', 'mg/m3', 1.2496),
-    ('NO', 'ppm', 'mg/m3', 1.3387),
-    ('NO2', 'ppm', 'mg/m3', 2.0525),
-    ('O3', 'ppm', 'mg/m3', 2.1414),
-    ('SO2', 'ppm', 'mg/m3', 2.8583),
-    ('H2S', 'ppm', 'mg/m3', 1.5205)
+    ('CO', 'ppm', 'mg/m3', 1.1456),
+    ('NO', 'ppm', 'mg/m3', 1.2272),
+    ('NO2', 'ppm', 'mg/m3', 1.8816),
+    ('O3', 'ppm', 'mg/m3', 1.9631),
+    ('SO2', 'ppm', 'mg/m3', 2.6203),
+    ('H2S', 'ppm', 'mg/m3', 1.3939)
 ON CONFLICT (substance_code, source_unit, target_unit) DO UPDATE SET
     multiplier = EXCLUDED.multiplier;
 
