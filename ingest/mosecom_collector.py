@@ -17,7 +17,16 @@ MOSCOW_TIMEZONE = ZoneInfo("Europe/Moscow")
 MOSECOM_PROXY_PORT = 8765
 MOSECOM_ORIGIN = "https://mosecom.mos.ru"
 MOSECOM_REFERER = "https://mosecom.mos.ru/karta/"
-MOSECOM_SUBSTANCES = ("NO2", "O3", "NO", "SO2", "CO", "H2S")
+MOSECOM_MEASUREMENTS = (
+    ("NO2", "NO2"),
+    ("OZ", "O3"),
+    ("NO", "NO"),
+    ("SO2", "SO2"),
+    ("CO", "CO"),
+    ("H2S", "H2S"),
+    ("PM10", "PM10"),
+    ("PM2.5", "PM2.5"),
+)
 MOSECOM_ADVISORY_LOCK_ID = 1_935_623_841
 REQUEST_TIMEOUT_SECONDS = 30
 REQUEST_ATTEMPTS = 3
@@ -62,8 +71,8 @@ def previous_hour_bucket_ms(now: datetime | None = None) -> int:
 
 def _fetch_all_substances() -> dict[str, dict[str, Any]]:
     return {
-        substance_code: _fetch_substance(substance_code)
-        for substance_code in MOSECOM_SUBSTANCES
+        stored_code: _fetch_substance(request_code)
+        for request_code, stored_code in MOSECOM_MEASUREMENTS
     }
 
 
@@ -143,7 +152,11 @@ def _store_payloads(cur, bucket_ms: int, payloads: dict[str, dict[str, Any]]) ->
             )
             VALUES (%s, %s, %s, %s, %s, %s)
             ON CONFLICT (monitoring_post_id, bucket_ms, substance_code)
-            DO NOTHING
+            DO UPDATE SET
+                value = EXCLUDED.value,
+                unit = EXCLUDED.unit,
+                pdk_ratio = EXCLUDED.pdk_ratio,
+                fetched_at = NOW()
             RETURNING 1
             """,
             (

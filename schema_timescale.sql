@@ -105,7 +105,7 @@ CREATE TABLE IF NOT EXISTS mosecom_hourly_readings (
         ON DELETE CASCADE,
     bucket_ms BIGINT NOT NULL CHECK (bucket_ms > 0),
     substance_code TEXT NOT NULL
-        CHECK (substance_code IN ('NO2', 'O3', 'NO', 'SO2', 'CO', 'H2S')),
+        CHECK (substance_code IN ('NO2', 'O3', 'NO', 'SO2', 'CO', 'H2S', 'PM10', 'PM2.5')),
     value DOUBLE PRECISION NOT NULL,
     unit TEXT NOT NULL,
     pdk_ratio DOUBLE PRECISION,
