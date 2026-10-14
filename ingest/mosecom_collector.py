@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import time
 from datetime import datetime, timedelta
 from typing import Any
@@ -13,7 +14,7 @@ import psycopg
 
 
 MOSCOW_TIMEZONE = ZoneInfo("Europe/Moscow")
-MOSECOM_URL = "https://mosecom.mos.ru/wp-content/themes/moseco/map/stations-new.php"
+MOSECOM_PROXY_PORT = 8765
 MOSECOM_ORIGIN = "https://mosecom.mos.ru"
 MOSECOM_REFERER = "https://mosecom.mos.ru/karta/"
 MOSECOM_SUBSTANCES = ("NO2", "O3", "NO", "SO2", "CO", "H2S")
@@ -67,8 +68,12 @@ def _fetch_all_substances() -> dict[str, dict[str, Any]]:
 
 
 def _fetch_substance(substance_code: str) -> dict[str, Any]:
+    proxy_host = os.getenv("MQTT_BROKER_1_HOST", "").strip()
+    if not proxy_host:
+        raise RuntimeError("MQTT_BROKER_1_HOST is required for the Mosecom proxy")
+    request_url = f"http://{proxy_host}:{MOSECOM_PROXY_PORT}/mosecom"
     request = Request(
-        MOSECOM_URL,
+        request_url,
         data=urlencode(
             {"locale": "ru_RU", "mapType": "air", "element": substance_code}
         ).encode("ascii"),

@@ -41,6 +41,7 @@ pip install -r requirements.txt
 - `MQTT_BROKER_N_KEEPALIVE`
 
 `N` - номер брокера от `1` до `MQTT_BROKER_COUNT`. Брокер с пустым `MQTT_BROKER_N_HOST` пропускается.
+Relay Мосэкомониторинга использует хост из `MQTT_BROKER_1_HOST` и порт `8765`.
 
 ## Запуск
 
