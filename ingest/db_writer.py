@@ -59,7 +59,11 @@ def to_int(value: Any) -> Optional[int]:
 
 
 def normalize_gas_unit(value: Any) -> Optional[str]:
+    if value is None:
+        return None
     text = str(value).strip().lower()
+    if not text:
+        return None
     if text == "ppm" or text == "ppm parts per million":
         return "ppm"
     if text == "mg/m3":
@@ -307,6 +311,10 @@ class MqttIngestDbWriter:
                 continue
             substance_code = GAS_SENSOR_SUBSTANCE_OVERRIDES.get(sensor_id, sensor.get("substanceCode"))
             raw_value = to_float(sensor.get("value"))
+            signal = to_int(sensor.get("signal"))
+            sensor_status = sensor.get("status")
+            if raw_value is None and signal is None and sensor_status is None:
+                continue
             source_unit = normalize_gas_unit(sensor.get("scaleDimension"))
             normalized_value = self._normalize_gas_value(raw_value, substance_code, source_unit, conversions)
             cur.execute(
@@ -340,8 +348,8 @@ class MqttIngestDbWriter:
                     raw_value,
                     normalized_value,
                     source_unit,
-                    to_int(sensor.get("signal")),
-                    sensor.get("status"),
+                    signal,
+                    sensor_status,
                 ),
             )
 
