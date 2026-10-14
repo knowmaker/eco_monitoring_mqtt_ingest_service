@@ -13,6 +13,7 @@ DROP TABLE IF EXISTS profile_state CASCADE;
 DROP TABLE IF EXISTS device_state CASCADE;
 DROP TABLE IF EXISTS raw_mqtt_payload CASCADE;
 DROP TABLE IF EXISTS plc_state CASCADE;
+DROP TABLE IF EXISTS mosecom_hourly_readings CASCADE;
 DROP TABLE IF EXISTS monitoring_posts CASCADE;
 DROP TABLE IF EXISTS gas_unit_conversions CASCADE;
 DROP TABLE IF EXISTS pollutant_limits CASCADE;
@@ -80,6 +81,8 @@ CREATE TABLE IF NOT EXISTS monitoring_posts (
     latitude DOUBLE PRECISION CHECK (latitude IS NULL OR latitude BETWEEN -90 AND 90),
     longitude DOUBLE PRECISION CHECK (longitude IS NULL OR longitude BETWEEN -180 AND 180),
     notes TEXT,
+    source TEXT NOT NULL DEFAULT 'internal'
+        CHECK (source IN ('internal', 'mosecom')),
     is_confirmed BOOLEAN NOT NULL DEFAULT FALSE,
     active_from TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     active_to TIMESTAMPTZ
@@ -94,6 +97,32 @@ CREATE INDEX IF NOT EXISTS idx_monitoring_posts_confirmed
 CREATE UNIQUE INDEX IF NOT EXISTS idx_monitoring_posts_active_serial
     ON monitoring_posts (serial)
     WHERE active_to IS NULL;
+
+-- Hourly aggregates obtained from the public Mosecomonitoring map.
+CREATE TABLE IF NOT EXISTS mosecom_hourly_readings (
+    monitoring_post_id BIGINT NOT NULL
+        REFERENCES monitoring_posts (id)
+        ON DELETE CASCADE,
+    bucket_ms BIGINT NOT NULL CHECK (bucket_ms > 0),
+    substance_code TEXT NOT NULL
+        CHECK (substance_code IN ('NO2', 'O3', 'NO', 'SO2', 'CO', 'H2S')),
+    value DOUBLE PRECISION NOT NULL,
+    unit TEXT NOT NULL,
+    pdk_ratio DOUBLE PRECISION,
+    fetched_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (monitoring_post_id, bucket_ms, substance_code)
+);
+
+SELECT create_hypertable(
+    'mosecom_hourly_readings',
+    'bucket_ms',
+    if_not_exists => TRUE,
+    migrate_data => TRUE,
+    chunk_time_interval => 2592000000
+);
+
+CREATE INDEX IF NOT EXISTS idx_mosecom_hourly_bucket
+    ON mosecom_hourly_readings (bucket_ms DESC, monitoring_post_id);
 
 -- PLC-level packet state (regular table).
 CREATE TABLE IF NOT EXISTS plc_state (

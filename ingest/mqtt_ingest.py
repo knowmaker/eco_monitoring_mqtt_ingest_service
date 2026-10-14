@@ -2,11 +2,13 @@ import json
 import logging
 import os
 import time
+from datetime import datetime
 
 import paho.mqtt.client as mqtt
 from dotenv import load_dotenv
 
 from .db_writer import MqttIngestDbWriter
+from .mosecom_collector import MosecomCollector, next_collection_time
 
 
 DEFAULT_CLIENT_ID = "eco-monitoring-mqtt-ingest-writer"
@@ -87,12 +89,14 @@ def main() -> None:
         raise SystemExit("DB_DSN is required in environment.")
 
     ingest_writer = MqttIngestDbWriter(db_dsn=db_dsn)
+    mosecom_collector = MosecomCollector(db_dsn=db_dsn)
 
     broker_configs = load_broker_configs()
     if not broker_configs:
         raise SystemExit("Set at least one MQTT broker in MQTT_BROKER_1_HOST.")
 
     clients = [build_client(config, ingest_writer) for config in broker_configs]
+    next_mosecom_collection = next_collection_time()
     try:
         for config, client in zip(broker_configs, clients):
             logging.info("Connecting to MQTT %s (%s:%s)", config["name"], config["host"], config["port"])
@@ -100,6 +104,14 @@ def main() -> None:
             client.loop_start()
 
         while True:
+            now = datetime.now(next_mosecom_collection.tzinfo)
+            if now >= next_mosecom_collection:
+                scheduled_at = next_mosecom_collection
+                next_mosecom_collection = next_collection_time(now)
+                try:
+                    mosecom_collector.collect_previous_hour(scheduled_at)
+                except Exception:
+                    logging.exception("Failed to collect Mosecom hourly readings")
             time.sleep(1)
     except KeyboardInterrupt:
         logging.info("Stopping MQTT ingest service")
