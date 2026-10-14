@@ -48,7 +48,10 @@ class MosecomCollector:
 
 def next_collection_time(now: datetime | None = None) -> datetime:
     local_now = (now or datetime.now(MOSCOW_TIMEZONE)).astimezone(MOSCOW_TIMEZONE)
-    return (local_now + timedelta(hours=1)).replace(minute=0, second=0, microsecond=0)
+    collection_time = local_now.replace(minute=30, second=0, microsecond=0)
+    if collection_time <= local_now:
+        collection_time += timedelta(hours=1)
+    return collection_time
 
 
 def previous_hour_bucket_ms(now: datetime | None = None) -> int:
