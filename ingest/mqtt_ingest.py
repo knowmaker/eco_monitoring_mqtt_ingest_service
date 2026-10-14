@@ -2,7 +2,7 @@ import json
 import logging
 import os
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import paho.mqtt.client as mqtt
 from dotenv import load_dotenv
@@ -12,6 +12,8 @@ from .mosecom_collector import MosecomCollector, next_collection_time
 
 
 DEFAULT_CLIENT_ID = "eco-monitoring-mqtt-ingest-writer"
+MOSECOM_COLLECTION_ATTEMPTS = 3
+MOSECOM_RETRY_DELAY = timedelta(minutes=5)
 
 
 def load_broker_configs() -> list[dict[str, str | int | None]]:
@@ -96,7 +98,9 @@ def main() -> None:
         raise SystemExit("Set at least one MQTT broker in MQTT_BROKER_1_HOST.")
 
     clients = [build_client(config, ingest_writer) for config in broker_configs]
-    next_mosecom_collection = next_collection_time()
+    mosecom_collection_time = next_collection_time()
+    next_mosecom_attempt = mosecom_collection_time
+    mosecom_collection_attempt = 1
     try:
         for config, client in zip(broker_configs, clients):
             logging.info("Connecting to MQTT %s (%s:%s)", config["name"], config["host"], config["port"])
@@ -104,14 +108,35 @@ def main() -> None:
             client.loop_start()
 
         while True:
-            now = datetime.now(next_mosecom_collection.tzinfo)
-            if now >= next_mosecom_collection:
-                scheduled_at = next_mosecom_collection
-                next_mosecom_collection = next_collection_time(now)
+            now = datetime.now(next_mosecom_attempt.tzinfo)
+            if now >= next_mosecom_attempt:
                 try:
-                    mosecom_collector.collect_previous_hour(scheduled_at)
+                    mosecom_collector.collect_previous_hour(mosecom_collection_time)
                 except Exception:
-                    logging.exception("Failed to collect Mosecom hourly readings")
+                    if mosecom_collection_attempt < MOSECOM_COLLECTION_ATTEMPTS:
+                        mosecom_collection_attempt += 1
+                        next_mosecom_attempt = datetime.now(now.tzinfo) + MOSECOM_RETRY_DELAY
+                        logging.exception(
+                            "Failed to collect Mosecom hourly readings; retry %s/%s at %s",
+                            mosecom_collection_attempt,
+                            MOSECOM_COLLECTION_ATTEMPTS,
+                            next_mosecom_attempt,
+                        )
+                    else:
+                        now = datetime.now(now.tzinfo)
+                        mosecom_collection_time = next_collection_time(now)
+                        next_mosecom_attempt = mosecom_collection_time
+                        mosecom_collection_attempt = 1
+                        logging.exception(
+                            "Failed to collect Mosecom hourly readings after %s attempts; next collection at %s",
+                            MOSECOM_COLLECTION_ATTEMPTS,
+                            next_mosecom_attempt,
+                        )
+                else:
+                    now = datetime.now(now.tzinfo)
+                    mosecom_collection_time = next_collection_time(now)
+                    next_mosecom_attempt = mosecom_collection_time
+                    mosecom_collection_attempt = 1
             time.sleep(1)
     except KeyboardInterrupt:
         logging.info("Stopping MQTT ingest service")

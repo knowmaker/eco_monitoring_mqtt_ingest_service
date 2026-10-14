@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import logging
 import time
-from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from typing import Any
 from urllib.parse import urlencode
@@ -61,8 +60,10 @@ def previous_hour_bucket_ms(now: datetime | None = None) -> int:
 
 
 def _fetch_all_substances() -> dict[str, dict[str, Any]]:
-    with ThreadPoolExecutor(max_workers=len(MOSECOM_SUBSTANCES)) as executor:
-        return dict(zip(MOSECOM_SUBSTANCES, executor.map(_fetch_substance, MOSECOM_SUBSTANCES)))
+    return {
+        substance_code: _fetch_substance(substance_code)
+        for substance_code in MOSECOM_SUBSTANCES
+    }
 
 
 def _fetch_substance(substance_code: str) -> dict[str, Any]:
@@ -92,6 +93,13 @@ def _fetch_substance(substance_code: str) -> dict[str, Any]:
         except Exception as exc:
             last_error = exc
             if attempt < REQUEST_ATTEMPTS:
+                logging.warning(
+                    "Mosecom request failed for %s (attempt %s/%s): %s",
+                    substance_code,
+                    attempt,
+                    REQUEST_ATTEMPTS,
+                    exc,
+                )
                 time.sleep(attempt)
 
     raise RuntimeError(f"Failed to fetch Mosecom data for {substance_code}") from last_error
