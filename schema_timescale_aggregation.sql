@@ -447,8 +447,73 @@ BEGIN
         p.id
       FROM public.plc_state p
       JOIN public.device_state ds ON ds.plc_state_id = p.id
-      WHERE ds.ping = 'OK'
-      ORDER BY p.monitoring_post_id, ds.device_type, p.plc_timestamp_ms DESC, ds.id DESC
+      WHERE
+        (
+          ds.device_type = 'gas'
+          AND EXISTS (
+            SELECT 1
+            FROM public.gas_sensors value_row
+            WHERE value_row.device_state_id = ds.id
+              AND value_row.substance_code IS NOT NULL
+              AND value_row.value IS NOT NULL
+          )
+        )
+        OR (
+          ds.device_type = 'dust'
+          AND EXISTS (
+            SELECT 1
+            FROM public.dust_state value_row
+            WHERE value_row.device_state_id = ds.id
+              AND (
+                value_row.pm1_concentration IS NOT NULL
+                OR value_row.pm2_concentration IS NOT NULL
+                OR value_row.pm10_concentration IS NOT NULL
+                OR value_row.tsp_concentration IS NOT NULL
+              )
+          )
+        )
+        OR (
+          ds.device_type = 'meteo'
+          AND EXISTS (
+            SELECT 1
+            FROM public.meteo_state value_row
+            WHERE value_row.device_state_id = ds.id
+              AND (
+                value_row.atm_press IS NOT NULL
+                OR value_row.air_temp IS NOT NULL
+                OR value_row.air_hum IS NOT NULL
+                OR value_row.hor_win_dir IS NOT NULL
+                OR value_row.hor_win_spd IS NOT NULL
+              )
+          )
+        )
+        OR (
+          ds.device_type = 'ivtm'
+          AND EXISTS (
+            SELECT 1
+            FROM public.ivtm_state value_row
+            WHERE value_row.device_state_id = ds.id
+              AND (
+                value_row.sensor_ivtm_hum IS NOT NULL
+                OR value_row.sensor_ivtm_temp IS NOT NULL
+              )
+          )
+        )
+        OR (
+          ds.device_type = 'profile'
+          AND EXISTS (
+            SELECT 1
+            FROM public.profile_levels value_row
+            WHERE value_row.device_state_id = ds.id
+              AND value_row.temperature IS NOT NULL
+          )
+        )
+      ORDER BY
+        p.monitoring_post_id,
+        ds.device_type,
+        ds.device_timestamp_ms DESC NULLS LAST,
+        p.plc_timestamp_ms DESC,
+        ds.id DESC
     );
 
   GET DIAGNOSTICS deleted_count = ROW_COUNT;
