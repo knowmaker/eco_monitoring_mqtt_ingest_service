@@ -28,6 +28,7 @@ MOSECOM_MEASUREMENTS = (
     ("PM2.5", "PM2.5"),
 )
 MOSECOM_ADVISORY_LOCK_ID = 1_935_623_841
+MOSECOM_COLLECTION_MINUTES = (30, 40, 50)
 REQUEST_TIMEOUT_SECONDS = 30
 REQUEST_ATTEMPTS = 3
 
@@ -51,16 +52,21 @@ class MosecomCollector:
                 payloads = _fetch_all_substances()
                 inserted_count = _store_payloads(cur, bucket_ms, payloads)
 
-        logging.info("Stored %s Mosecom hourly readings for bucket %s", inserted_count, bucket_ms)
+        logging.info("Inserted %s new Mosecom hourly readings for bucket %s", inserted_count, bucket_ms)
         return inserted_count
 
 
 def next_collection_time(now: datetime | None = None) -> datetime:
     local_now = (now or datetime.now(MOSCOW_TIMEZONE)).astimezone(MOSCOW_TIMEZONE)
-    collection_time = local_now.replace(minute=30, second=0, microsecond=0)
-    if collection_time <= local_now:
-        collection_time += timedelta(hours=1)
-    return collection_time
+    for minute in MOSECOM_COLLECTION_MINUTES:
+        collection_time = local_now.replace(minute=minute, second=0, microsecond=0)
+        if collection_time >= local_now:
+            return collection_time
+    return (local_now + timedelta(hours=1)).replace(
+        minute=MOSECOM_COLLECTION_MINUTES[0],
+        second=0,
+        microsecond=0,
+    )
 
 
 def previous_hour_bucket_ms(now: datetime | None = None) -> int:
@@ -152,11 +158,7 @@ def _store_payloads(cur, bucket_ms: int, payloads: dict[str, dict[str, Any]]) ->
             )
             VALUES (%s, %s, %s, %s, %s, %s)
             ON CONFLICT (monitoring_post_id, bucket_ms, substance_code)
-            DO UPDATE SET
-                value = EXCLUDED.value,
-                unit = EXCLUDED.unit,
-                pdk_ratio = EXCLUDED.pdk_ratio,
-                fetched_at = NOW()
+            DO NOTHING
             RETURNING 1
             """,
             (
