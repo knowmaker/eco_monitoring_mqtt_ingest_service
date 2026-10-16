@@ -9,7 +9,7 @@ SUPPORTED_DEVICE_TYPES = ("gas", "dust", "meteo", "ivtm", "profile")
 GAS_TARGET_UNIT = "mg/m3"
 
 # Временное решение: часть газовых устройств передает неправильный substanceCode.
-# Сырой MQTT-пакет сохраняем без изменений, но в gas_sensors.substance_code
+# Исходный MQTT-пакет сохраняем без изменений, но в gas_sensors.substance_code
 # записываем код газа по sensor_id, пока не исправлена прошивка источника.
 GAS_SENSOR_SUBSTANCE_OVERRIDES = {
     1: "NO2",
