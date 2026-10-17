@@ -219,6 +219,28 @@ FROM (
   GROUP BY 1, 2
   HAVING count(*) >= 2
 ) profile
+CROSS JOIN LATERAL public.calculate_profile_inversion(profile.heights, profile.temperatures) inversion
+
+UNION ALL
+
+SELECT
+  profile.bucket_ms,
+  profile.monitoring_post_id,
+  inversion.inversion_power AS inversion_power_avg,
+  inversion.inversion_lower AS inversion_lower_avg,
+  inversion.inversion_upper AS inversion_upper_avg,
+  inversion.inversion_delta_t AS inversion_delta_t_avg
+FROM (
+  SELECT
+    bucket_ms,
+    monitoring_post_id,
+    array_agg(height ORDER BY height) AS heights,
+    array_agg(temperature ORDER BY height) AS temperatures
+  FROM public.mosecom_profile_hourly
+  WHERE temperature IS NOT NULL
+  GROUP BY 1, 2
+  HAVING count(*) >= 2
+) profile
 CROSS JOIN LATERAL public.calculate_profile_inversion(profile.heights, profile.temperatures) inversion;
 
 CREATE MATERIALIZED VIEW public.cagg_dust_daily
@@ -320,6 +342,36 @@ FROM (
     array_agg(temperature_avg ORDER BY height) AS temperatures
   FROM public.cagg_profile_levels_daily
   WHERE temperature_avg IS NOT NULL
+  GROUP BY 1, 2
+  HAVING count(*) >= 2
+) profile
+CROSS JOIN LATERAL public.calculate_profile_inversion(profile.heights, profile.temperatures) inversion
+
+UNION ALL
+
+SELECT
+  profile.bucket_ms,
+  profile.monitoring_post_id,
+  inversion.inversion_power AS inversion_power_avg,
+  inversion.inversion_lower AS inversion_lower_avg,
+  inversion.inversion_upper AS inversion_upper_avg,
+  inversion.inversion_delta_t AS inversion_delta_t_avg
+FROM (
+  SELECT
+    bucket_ms,
+    monitoring_post_id,
+    array_agg(height ORDER BY height) AS heights,
+    array_agg(temperature_avg ORDER BY height) AS temperatures
+  FROM (
+    SELECT
+      time_bucket(86400000::BIGINT, bucket_ms, 75600000::BIGINT) AS bucket_ms,
+      monitoring_post_id,
+      height,
+      AVG(temperature) AS temperature_avg
+    FROM public.mosecom_profile_hourly
+    WHERE temperature IS NOT NULL
+    GROUP BY 1, 2, 3
+  ) levels
   GROUP BY 1, 2
   HAVING count(*) >= 2
 ) profile
