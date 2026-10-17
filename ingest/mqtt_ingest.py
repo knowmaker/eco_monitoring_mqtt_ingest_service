@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 
 from .db_writer import MqttIngestDbWriter
 from .mosecom_collector import MosecomCollector, next_collection_time
+from .mosecom_profile_collector import MosecomProfileCollector, next_profile_collection_time
 
 
 DEFAULT_CLIENT_ID = "eco-monitoring-mqtt-ingest-writer"
@@ -92,6 +93,7 @@ def main() -> None:
 
     ingest_writer = MqttIngestDbWriter(db_dsn=db_dsn)
     mosecom_collector = MosecomCollector(db_dsn=db_dsn)
+    mosecom_profile_collector = MosecomProfileCollector(db_dsn=db_dsn)
 
     broker_configs = load_broker_configs()
     if not broker_configs:
@@ -101,6 +103,9 @@ def main() -> None:
     mosecom_collection_time = next_collection_time()
     next_mosecom_attempt = mosecom_collection_time
     mosecom_collection_attempt = 1
+    profile_collection_time = next_profile_collection_time()
+    next_profile_attempt = profile_collection_time
+    profile_collection_attempt = 1
     try:
         for config, client in zip(broker_configs, clients):
             logging.info("Connecting to MQTT %s (%s:%s)", config["name"], config["host"], config["port"])
@@ -137,6 +142,35 @@ def main() -> None:
                     mosecom_collection_time = next_collection_time(now)
                     next_mosecom_attempt = mosecom_collection_time
                     mosecom_collection_attempt = 1
+            now = datetime.now(next_profile_attempt.tzinfo)
+            if now >= next_profile_attempt:
+                try:
+                    mosecom_profile_collector.collect(profile_collection_time)
+                except Exception:
+                    if profile_collection_attempt < MOSECOM_COLLECTION_ATTEMPTS:
+                        profile_collection_attempt += 1
+                        next_profile_attempt = datetime.now(now.tzinfo) + MOSECOM_RETRY_DELAY
+                        logging.exception(
+                            "Failed to collect Mosecom profiler data; retry %s/%s at %s",
+                            profile_collection_attempt,
+                            MOSECOM_COLLECTION_ATTEMPTS,
+                            next_profile_attempt,
+                        )
+                    else:
+                        now = datetime.now(now.tzinfo)
+                        profile_collection_time = next_profile_collection_time(now)
+                        next_profile_attempt = profile_collection_time
+                        profile_collection_attempt = 1
+                        logging.exception(
+                            "Failed to collect Mosecom profiler data after %s attempts; next collection at %s",
+                            MOSECOM_COLLECTION_ATTEMPTS,
+                            next_profile_attempt,
+                        )
+                else:
+                    now = datetime.now(now.tzinfo)
+                    profile_collection_time = next_profile_collection_time(now)
+                    next_profile_attempt = profile_collection_time
+                    profile_collection_attempt = 1
             time.sleep(1)
     except KeyboardInterrupt:
         logging.info("Stopping MQTT ingest service")

@@ -18,6 +18,7 @@ SELECT set_integer_now_func('public.meteo_state', 'public.now_ms', true);
 SELECT set_integer_now_func('public.ivtm_state',  'public.now_ms', true);
 SELECT set_integer_now_func('public.profile_state',  'public.now_ms', true);
 SELECT set_integer_now_func('public.profile_levels', 'public.now_ms', true);
+SELECT set_integer_now_func('public.mosecom_profile_hourly', 'public.now_ms', true);
 
 -- Calculate the strongest contiguous inversion segment in an already aggregated
 -- temperature profile. Power is the layer thickness in meters.

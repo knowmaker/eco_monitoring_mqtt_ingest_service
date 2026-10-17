@@ -13,6 +13,7 @@ DROP TABLE IF EXISTS profile_state CASCADE;
 DROP TABLE IF EXISTS device_state CASCADE;
 DROP TABLE IF EXISTS raw_mqtt_payload CASCADE;
 DROP TABLE IF EXISTS plc_state CASCADE;
+DROP TABLE IF EXISTS mosecom_profile_hourly CASCADE;
 DROP TABLE IF EXISTS mosecom_hourly_readings CASCADE;
 DROP TABLE IF EXISTS monitoring_posts CASCADE;
 DROP TABLE IF EXISTS gas_unit_conversions CASCADE;
@@ -122,6 +123,29 @@ SELECT create_hypertable(
 
 CREATE INDEX IF NOT EXISTS idx_mosecom_hourly_bucket
     ON mosecom_hourly_readings (bucket_ms DESC, monitoring_post_id);
+
+-- Hourly mean temperature profiles obtained from Mosecomonitoring profilers.
+CREATE TABLE IF NOT EXISTS mosecom_profile_hourly (
+    monitoring_post_id BIGINT NOT NULL
+        REFERENCES monitoring_posts (id)
+        ON DELETE CASCADE,
+    bucket_ms BIGINT NOT NULL CHECK (bucket_ms > 0),
+    height DOUBLE PRECISION NOT NULL CHECK (height >= 0),
+    temperature DOUBLE PRECISION NOT NULL,
+    fetched_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (monitoring_post_id, bucket_ms, height)
+);
+
+SELECT create_hypertable(
+    'mosecom_profile_hourly',
+    'bucket_ms',
+    if_not_exists => TRUE,
+    migrate_data => TRUE,
+    chunk_time_interval => 2592000000
+);
+
+CREATE INDEX IF NOT EXISTS idx_mosecom_profile_hourly_bucket
+    ON mosecom_profile_hourly (bucket_ms DESC, monitoring_post_id);
 
 -- PLC-level packet state (regular table).
 CREATE TABLE IF NOT EXISTS plc_state (
